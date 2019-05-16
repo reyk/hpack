@@ -69,9 +69,11 @@ parsehex(const char *hex, unsigned char *buf, size_t len)
 int
 main(int argc, char *argv[])
 {
-	unsigned char	 buf[1024];
-	const char	*hex;
-	ssize_t		 len;
+	struct hpack_headerlist	*hdrs;
+	struct hpack_header	*hdr;
+	unsigned char		 buf[1024];
+	const char		*hex;
+	ssize_t			 len;
 
 	if (argc > 2) 
 		errx(1, "usage: %s 0x...", argv[0]);
@@ -88,7 +90,15 @@ main(int argc, char *argv[])
 	if (hpack_init() == -1)
 		errx(1, "hpack_init");
 
-	hpack_decode(buf, len, NULL);
+	if ((hdrs = hpack_decode(buf, len, NULL)) == NULL)
+		errx(1, "hpack_decode");
+
+	TAILQ_FOREACH(hdr, hdrs, hdr_entry) {
+		if (hdr->hdr_name == NULL || hdr->hdr_value == NULL)
+			errx(1, "invalid header");
+		printf("%s: %s\n", hdr->hdr_name, hdr->hdr_value);
+	}
+	hpack_headerlist_free(hdrs);
 
 	return (0);
 }

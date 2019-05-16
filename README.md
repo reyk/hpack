@@ -23,4 +23,3 @@ TODO
 
 - encoding
 - dynamic table
-- header list

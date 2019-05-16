@@ -38,6 +38,8 @@ char	*huffman_decode_str(unsigned char *, size_t);
 #define DPRINTF		warnx
 #endif
 
+#define HUFFMAN_BUFSZ	256
+
 struct huffman_node {
 	struct huffman_node	*hpn_zero;
 	struct huffman_node	*hpn_one;

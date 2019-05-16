@@ -340,7 +340,7 @@ huffman_init(void)
 unsigned char *
 huffman_decode(unsigned char *buf, size_t len, size_t *decoded_len)
 {
-	size_t			 n = 0, size = 256, newsize;
+	size_t			 n = 0, size = HUFFMAN_BUFSZ, newsize;
 	struct huffman_node	*node;
 	char			*decoded, *ptr;
 	unsigned int		 i, j, code;
@@ -365,7 +365,9 @@ huffman_decode(unsigned char *buf, size_t len, size_t *decoded_len)
 
 			decoded[n++] = node->hpn_sym;
 			if (n >= size) {
-				newsize = size + 256;
+				newsize = size + HUFFMAN_BUFSZ;
+				DPRINTF("%s: realloc %zd -> %zd", __func__,
+				    size, newsize);
 				if ((ptr = recallocarray(decoded,
 				    size, newsize, 1)) == NULL)
 					goto fail;

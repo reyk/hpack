@@ -185,7 +185,8 @@ parsehex(const char *hex, unsigned char *buf, size_t len)
 }
 
 static int
-parse_hpack(const char *hex, struct hpack_headerlist *test)
+parse_hpack(const char *hex, struct hpack_headerlist *test,
+    struct hpack_table *hpack)
 {
 	struct hpack_headerlist	*hdrs = NULL;
 	unsigned char		 buf[8192];
@@ -197,7 +198,7 @@ parse_hpack(const char *hex, struct hpack_headerlist *test)
 		printf("wire format is not a hex string\n");
 		goto fail;
 	}
-	if ((hdrs = hpack_decode(buf, len, NULL)) == NULL) {
+	if ((hdrs = hpack_decode(buf, len, hpack)) == NULL) {
 		printf("hpack_decode\n");
 		goto fail;
 	}
@@ -228,16 +229,18 @@ parse_hpack(const char *hex, struct hpack_headerlist *test)
 static int
 parse_tests(char *argv[])
 {
+	struct hpack_table	*hpack = NULL;
 	struct hpack_headerlist	*test = NULL;
 	FTS			*fts;
 	FTSENT			*ftsp = NULL;
-	char			*str = NULL, *wire = NULL;
+	char			*str = NULL, *wire = NULL, *tblsz;
 	FILE			*fp;
 	off_t			 size;
 	int			 ret = -1;
 	struct jsmnn		*json = NULL, *cases, *obj, *hdr, *hdrs;
 	size_t			 i = 0, j, k, ok = 0;
 	const char		*errstr = NULL;
+	size_t			 table_size, init_table_size;
 
 	if ((fts = fts_open(argv, FTS_COMFOLLOW|FTS_NOCHDIR,
 	    NULL)) == NULL) {
@@ -277,6 +280,9 @@ parse_tests(char *argv[])
 			goto done;
 		}
 
+		/* The default table size of the test cases is 4096 */
+		init_table_size = 4096;
+
 		for (i = 0; i < cases->fields; i++) {
 			if ((obj =
 			    json_getarrayobj(cases->d.array[i])) == NULL)
@@ -286,6 +292,15 @@ parse_tests(char *argv[])
 				ret = 0;
 				goto done;
 			}
+			if ((tblsz = json_getstr(obj,
+			    "header_table_size")) != NULL) {
+				table_size = strtonum(tblsz,
+				    0, LONG_MAX, &errstr);
+				free(tblsz);
+				if (errstr != NULL)
+					goto done;
+			} else
+				table_size = init_table_size;
 			if ((hdrs = json_getarray(obj, "headers")) == NULL) {
 				errstr = "no headers found";
 				goto done;
@@ -316,7 +331,16 @@ parse_tests(char *argv[])
 				}
 			}
 
-			if (parse_hpack(wire, test) == -1) {
+			if (hpack == NULL) {
+				init_table_size = table_size;
+				if ((hpack =
+				    hpack_table_new(table_size)) == NULL) {
+					errstr = "failed to get HPACK table";
+					goto done;
+				}
+			}
+
+			if (parse_hpack(wire, test, hpack) == -1) {
 				errstr = "failed to parse HPACK";
 				goto done;
 			}
@@ -333,6 +357,8 @@ parse_tests(char *argv[])
 		json = NULL;
 		free(str);
 		str = NULL;
+		hpack_table_free(hpack);
+		hpack = NULL;
 
 		printf("SUCCESS: %s: %zu tests\n", ftsp->fts_path, ok);
 	}
@@ -348,6 +374,7 @@ parse_tests(char *argv[])
 	else if (errstr != NULL)
 		printf("FAILED: %s\n", errstr);
 	free(wire);
+	hpack_table_free(hpack);
 	hpack_headerlist_free(test);
 	json_free(json);
 	free(str);
@@ -374,7 +401,7 @@ main(int argc, char *argv[])
 	/* HPACK-encoded test string */
 	hex = "4186a0e41d139d098284874085f2b24a84ff8849509089951a6dcf";
 
-	if (parse_hpack(hex, NULL) == -1)
+	if (parse_hpack(hex, NULL, NULL) == -1)
 		return (1);
 
 	return (0);

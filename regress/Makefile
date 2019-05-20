@@ -7,7 +7,7 @@ PROG=			hpacktest
 SRCS+=			main.c jsmn.c json.c
 CFLAGS+=		-DJSMN_PARENT_LINKS
 
-REGRESS_TARGETS=	test
+REGRESS_TARGETS?=	test
 
 test: ${PROG}
 	./${PROG} ${HPACKTESTDIR}

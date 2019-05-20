@@ -69,20 +69,20 @@ hpack_init(void)
 	return (0);
 }
 
-struct hpack_headerlist *
+struct hpack_headerblock *
 hpack_decode(unsigned char *buf, size_t len, struct hpack_table *hpack)
 {
-	struct hpack_headerlist	*hdrs = NULL;
-	struct hbuf		*hbuf = NULL;
-	struct hpack_table	*ctx = NULL;
-	int			 ret = -1;
+	struct hpack_headerblock	*hdrs = NULL;
+	struct hbuf			*hbuf = NULL;
+	struct hpack_table		*ctx = NULL;
+	int				 ret = -1;
 
 	if (len == 0 || len > LONG_MAX)
 		goto fail;
 
 	if (hpack == NULL && (hpack = ctx = hpack_table_new(0)) == NULL)
 		goto fail;
-	if ((hdrs = hpack_headerlist_new()) == NULL)
+	if ((hdrs = hpack_headerblock_new()) == NULL)
 		goto fail;
 
 	hpack->htb_headers = hdrs;
@@ -100,7 +100,7 @@ hpack_decode(unsigned char *buf, size_t len, struct hpack_table *hpack)
  fail:
 	hbuf_free(hbuf);
 	if (ret != 0) {
-		hpack_headerlist_free(hdrs);
+		hpack_headerblock_free(hdrs);
 		hdrs = NULL;
 	} else
 		hdrs = hpack->htb_headers;
@@ -120,7 +120,7 @@ hpack_header_new(void)
 }
 
 struct hpack_header *
-hpack_header_add(struct hpack_headerlist *hdrs,
+hpack_header_add(struct hpack_headerblock *hdrs,
     const char *name, const char *value)
 {
 	struct hpack_header	*hdr;
@@ -148,10 +148,10 @@ hpack_header_free(struct hpack_header *hdr)
 	free(hdr);
 }
 
-struct hpack_headerlist *
-hpack_headerlist_new(void)
+struct hpack_headerblock *
+hpack_headerblock_new(void)
 {
-	struct hpack_headerlist	*hdrs;
+	struct hpack_headerblock	*hdrs;
 	if ((hdrs = calloc(1, sizeof(*hdrs))) == NULL)
 		return (NULL);
 	TAILQ_INIT(hdrs);
@@ -159,7 +159,7 @@ hpack_headerlist_new(void)
 }
 
 void
-hpack_headerlist_free(struct hpack_headerlist *hdrs)
+hpack_headerblock_free(struct hpack_headerblock *hdrs)
 {
 	struct hpack_header	*hdr;
 
@@ -178,7 +178,7 @@ hpack_table_new(size_t max_table_size)
 
 	if ((hpack = calloc(1, sizeof(*hpack))) == NULL)
 		return (NULL);
-	if ((hpack->htb_dynamic = hpack_headerlist_new()) == NULL) {
+	if ((hpack->htb_dynamic = hpack_headerblock_new()) == NULL) {
 		free(hpack);
 		return (NULL);
 	}
@@ -193,7 +193,7 @@ hpack_table_free(struct hpack_table *hpack)
 {
 	if (hpack == NULL)
 		return;
-	hpack_headerlist_free(hpack->htb_dynamic);
+	hpack_headerblock_free(hpack->htb_dynamic);
 	free(hpack);
 }
 
@@ -217,7 +217,7 @@ hpack_table_get(long index, struct hpack_table *hpack)
 	} else {
 		/* Dynamic table */
 		TAILQ_FOREACH_REVERSE(hdr, hpack->htb_dynamic,
-		    hpack_headerlist, hdr_entry) {
+		    hpack_headerblock, hdr_entry) {
 			dynidx++;
 			if (dynidx == index) {
 				idbuf.hpi_id = index;

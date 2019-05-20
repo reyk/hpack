@@ -29,7 +29,7 @@ struct hpack_header {
 	unsigned int		 hdr_index;
 	TAILQ_ENTRY(hpack_header) hdr_entry;
 };
-TAILQ_HEAD(hpack_headerlist, hpack_header);
+TAILQ_HEAD(hpack_headerblock, hpack_header);
 
 int	 hpack_init(void);
 
@@ -38,18 +38,18 @@ struct hpack_table *
 void	 hpack_table_free(struct hpack_table *);
 size_t	 hpack_table_size(struct hpack_table *);
 
-struct hpack_headerlist *
+struct hpack_headerblock *
 	 hpack_decode(unsigned char *, size_t, struct hpack_table *);
 
 struct hpack_header *
 	 hpack_header_new(void);
 struct hpack_header *
-	 hpack_header_add(struct hpack_headerlist *,
+	 hpack_header_add(struct hpack_headerblock *,
 	    const char *key, const char *value);
 void	 hpack_header_free(struct hpack_header *);
-struct hpack_headerlist *
-	 hpack_headerlist_new(void);
-void	 hpack_headerlist_free(struct hpack_headerlist *);
+struct hpack_headerblock *
+	 hpack_headerblock_new(void);
+void	 hpack_headerblock_free(struct hpack_headerblock *);
 
 unsigned char
 	*huffman_decode(unsigned char *, size_t, size_t *);
@@ -83,13 +83,13 @@ struct hpack {
 };
 
 struct hpack_table {
-	struct hpack_headerlist	*htb_dynamic;
-	long			 htb_dynamic_size;
-	long			 htb_table_size;
-	long			 htb_max_table_size;
+	struct hpack_headerblock	*htb_dynamic;
+	long				 htb_dynamic_size;
+	long				 htb_table_size;
+	long				 htb_max_table_size;
 
-	struct hpack_headerlist	*htb_headers;
-	struct hpack_header	*htb_next;
+	struct hpack_headerblock	*htb_headers;
+	struct hpack_header		*htb_next;
 };
 
 /* Simple internal buffer API */

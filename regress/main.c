@@ -86,8 +86,8 @@ json_uascii_decode(char *str)
 }
 
 static int
-hpack_headerlist_cmp(struct hpack_headerlist *a,
-    struct hpack_headerlist *b)
+hpack_headerblock_cmp(struct hpack_headerblock *a,
+    struct hpack_headerblock *b)
 {
 	struct hpack_header	*ha, *hb;
 
@@ -116,7 +116,7 @@ hpack_headerlist_cmp(struct hpack_headerlist *a,
 }
 
 static int
-hpack_headerlist_print(const char *prefix, struct hpack_headerlist *hdrs)
+hpack_headerblock_print(const char *prefix, struct hpack_headerblock *hdrs)
 {
 	struct hpack_header	*hdr;
 
@@ -185,14 +185,14 @@ parsehex(const char *hex, unsigned char *buf, size_t len)
 }
 
 static int
-parse_hpack(const char *hex, struct hpack_headerlist *test,
+parse_hpack(const char *hex, struct hpack_headerblock *test,
     struct hpack_table *hpack)
 {
-	struct hpack_headerlist	*hdrs = NULL;
-	unsigned char		 buf[8192];
-	ssize_t			 len;
-	extern const char	*__progname;
-	int			 ret = -1;
+	struct hpack_headerblock	*hdrs = NULL;
+	unsigned char			 buf[8192];
+	ssize_t				 len;
+	extern const char		*__progname;
+	int				 ret = -1;
 
 	if ((len = parsehex(hex, buf, sizeof(buf))) == -1) {
 		printf("wire format is not a hex string\n");
@@ -202,15 +202,15 @@ parse_hpack(const char *hex, struct hpack_headerlist *test,
 		printf("hpack_decode\n");
 		goto fail;
 	}
-	if (hpack_headerlist_print(NULL, test) == -1) {
+	if (hpack_headerblock_print(NULL, test) == -1) {
 		printf("test headers invalid\n");
 		goto fail;
 	}
-	if (hpack_headerlist_print(NULL, hdrs) == -1) {
+	if (hpack_headerblock_print(NULL, hdrs) == -1) {
 		printf("parsed headers invalid\n");
 		goto fail;
 	}
-	if (hpack_headerlist_cmp(hdrs, test) != 0) {
+	if (hpack_headerblock_cmp(hdrs, test) != 0) {
 		printf("test headers mismatched\n");
 		goto fail;
 	}
@@ -219,28 +219,28 @@ parse_hpack(const char *hex, struct hpack_headerlist *test,
  fail:
 	if (ret != 0) {
 		printf(">>> wire: %s\n", hex);
-		hpack_headerlist_print(">>> header:", test);
-		hpack_headerlist_print("<<< parsed:", hdrs);
+		hpack_headerblock_print(">>> header:", test);
+		hpack_headerblock_print("<<< parsed:", hdrs);
 	}
-	hpack_headerlist_free(hdrs);
+	hpack_headerblock_free(hdrs);
 	return (ret);
 }
 
 static int
 parse_tests(char *argv[])
 {
-	struct hpack_table	*hpack = NULL;
-	struct hpack_headerlist	*test = NULL;
-	FTS			*fts;
-	FTSENT			*ftsp = NULL;
-	char			*str = NULL, *wire = NULL, *tblsz;
-	FILE			*fp;
-	off_t			 size;
-	int			 ret = -1;
-	struct jsmnn		*json = NULL, *cases, *obj, *hdr, *hdrs;
-	size_t			 i = 0, j, k, ok = 0;
-	const char		*errstr = NULL;
-	size_t			 table_size, init_table_size;
+	struct hpack_table		*hpack = NULL;
+	struct hpack_headerblock	*test = NULL;
+	FTS				*fts;
+	FTSENT				*ftsp = NULL;
+	char				*str = NULL, *wire = NULL, *tblsz;
+	FILE				*fp;
+	off_t				 size;
+	int				 ret = -1;
+	struct jsmnn			*json = NULL, *cases, *obj, *hdr, *hdrs;
+	size_t				 i = 0, j, k, ok = 0;
+	const char			*errstr = NULL;
+	size_t				 table_size, init_table_size;
 
 	if ((fts = fts_open(argv, FTS_COMFOLLOW|FTS_NOCHDIR,
 	    NULL)) == NULL) {
@@ -305,7 +305,7 @@ parse_tests(char *argv[])
 				errstr = "no headers found";
 				goto done;
 			}
-			if ((test = hpack_headerlist_new()) == NULL)
+			if ((test = hpack_headerblock_new()) == NULL)
 				goto done;
 			for (j = 0; j < hdrs->fields; j++) {
 				if ((hdr = json_getarrayobj(hdrs->d.array[j]))
@@ -346,7 +346,7 @@ parse_tests(char *argv[])
 			}
 
 			ok++;
-			hpack_headerlist_free(test);
+			hpack_headerblock_free(test);
 			test = NULL;
 			free(wire);
 			wire = NULL;
@@ -375,7 +375,7 @@ parse_tests(char *argv[])
 		printf("FAILED: %s\n", errstr);
 	free(wire);
 	hpack_table_free(hpack);
-	hpack_headerlist_free(test);
+	hpack_headerblock_free(test);
 	json_free(json);
 	free(str);
 	fts_close(fts);

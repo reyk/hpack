@@ -32,6 +32,8 @@ static const struct hpack_index *
 		 hpack_table_get(long, struct hpack_table *);
 static int	 hpack_table_add(struct hpack_header *,
 		    struct hpack_table *);
+static int	 hpack_table_evict(long, long, struct hpack_table *);
+static int	 hpack_table_setsize(long, struct hpack_table *);
 
 static char	*hpack_decode_str(struct hbuf *, unsigned char);
 static int	 hpack_decode_buf(struct hbuf *, struct hpack_table *);
@@ -235,13 +237,58 @@ hpack_table_get(long index, struct hpack_table *hpack)
 static int
 hpack_table_add(struct hpack_header *hdr, struct hpack_table *hpack)
 {
+	long		 newsize;
+
 	if (hdr->hdr_index != HPACK_INDEX)
 		return (0);
+
+	/*
+	 * Following RFC 7451 section 4.1,
+	 * the additional 32 octets account for an estimated overhead
+	 * associated with an entry.
+	 */
+	newsize = strlen(hdr->hdr_name) + strlen(hdr->hdr_value) + 32;
+
+	if (newsize > hpack->htb_table_size) {
+		/*
+		 * An entry larger than the maximum size causes
+		 * the table to be emptied of all existing entries.
+		 */
+		hpack_table_evict(0, newsize, hpack);
+		return (0);
+	} else
+		hpack_table_evict(hpack->htb_table_size,
+		    newsize, hpack);
 
 	if (hpack_header_add(hpack->htb_dynamic,
 	    hdr->hdr_name, hdr->hdr_value) == NULL)
 		return (-1);
-	hpack->htb_dynamic_size++;
+	hpack->htb_dynamic_entries++;
+	hpack->htb_dynamic_size += newsize;
+
+	return (0);
+}
+
+static int
+hpack_table_evict(long size, long newsize, struct hpack_table *hpack)
+{
+	struct hpack_header	*hdr;
+
+	while (size < (hpack->htb_dynamic_size + newsize) &&
+	    (hdr = TAILQ_FIRST(hpack->htb_dynamic)) != NULL) {
+		TAILQ_REMOVE(hpack->htb_dynamic, hdr, hdr_entry);
+		hpack->htb_dynamic_entries--;
+		hpack->htb_dynamic_size -=
+		    strlen(hdr->hdr_name) +
+		    strlen(hdr->hdr_value) +
+		    32;
+		hpack_header_free(hdr);
+	}
+
+	if (TAILQ_EMPTY(hpack->htb_dynamic) &&
+	    hpack->htb_dynamic_entries != 0 &&
+	    hpack->htb_dynamic_size != 0)
+		errx(1, "corrupted HPACK dynamic table");
 
 	return (0);
 }
@@ -249,21 +296,20 @@ hpack_table_add(struct hpack_header *hdr, struct hpack_table *hpack)
 static int
 hpack_table_setsize(long size, struct hpack_table *hpack)
 {
-	/*
-	 * XXX
-	 * XXX evict entries etc.
-	 * XXX
-	 */
 	if (size > hpack->htb_max_table_size)
-		size = hpack->htb_max_table_size;
+		return (-1);
+
+	if (hpack_table_evict(size, 0, hpack) == -1)
+		return (-1);
 	hpack->htb_table_size = size;
+
 	return (0);
 }
 
 size_t
 hpack_table_size(struct hpack_table *hpack)
 {
-	return ((size_t)hpack->htb_table_size);
+	return ((size_t)hpack->htb_dynamic_size);
 }
 
 static long

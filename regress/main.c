@@ -332,9 +332,10 @@ parse_tests(char *argv[])
 			}
 
 			if (hpack == NULL) {
-				init_table_size = table_size;
+				if (table_size > init_table_size)
+					init_table_size = table_size;
 				if ((hpack =
-				    hpack_table_new(table_size)) == NULL) {
+				    hpack_table_new(init_table_size)) == NULL) {
 					errstr = "failed to get HPACK table";
 					goto done;
 				}
@@ -342,6 +343,11 @@ parse_tests(char *argv[])
 
 			if (parse_hpack(wire, test, hpack) == -1) {
 				errstr = "failed to parse HPACK";
+				goto done;
+			}
+
+			if (hpack_table_size(hpack) > table_size) {
+				errstr = "invalid table size";
 				goto done;
 			}
 

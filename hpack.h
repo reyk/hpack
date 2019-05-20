@@ -85,6 +85,8 @@ struct hpack {
 struct hpack_table {
 	struct hpack_headerblock	*htb_dynamic;
 	long				 htb_dynamic_size;
+	long				 htb_dynamic_entries;
+
 	long				 htb_table_size;
 	long				 htb_max_table_size;
 

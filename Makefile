@@ -1,3 +1,3 @@
-SUBDIR=	hpacktest lib
+SUBDIR=	lib regress
 
 .include <bsd.subdir.mk>

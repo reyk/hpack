@@ -41,8 +41,11 @@ struct hpack_headerlist *
 struct hpack_header *
 	 hpack_header_new(void);
 struct hpack_header *
-	 hpack_header_add(struct hpack_header *, struct hpack_header *);
+	 hpack_header_add(struct hpack_headerlist *,
+	    const char *key, const char *value);
 void	 hpack_header_free(struct hpack_header *);
+struct hpack_headerlist *
+	 hpack_headerlist_new(void);
 void	 hpack_headerlist_free(struct hpack_headerlist *);
 
 unsigned char

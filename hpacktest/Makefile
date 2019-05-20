@@ -1,6 +1,15 @@
-.PATH:	${.CURDIR}/..
+HPACKSRCDIR=		${.CURDIR}/..
+HPACKTESTDIR=		${.CURDIR}/hpack-test-case
 
-PROG=	hpacktest
-SRCS+=	main.c
+.PATH:	${HPACKSRCDIR}
 
-.include <bsd.prog.mk>
+PROG=			hpacktest
+SRCS+=			main.c jsmn.c json.c
+CFLAGS+=		-DJSMN_PARENT_LINKS
+
+REGRESS_TARGETS=	test
+
+test: ${PROG}
+	./${PROG} ${HPACKTESTDIR}
+
+.include <bsd.regress.mk>

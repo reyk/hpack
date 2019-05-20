@@ -98,9 +98,8 @@ hpack_decode(unsigned char *buf, size_t len, struct hpack_context *hpack)
 
 	if (hpack == NULL && (hpack = ctx = hpack_context_new()) == NULL)
 		goto fail;
-	if ((hdrs = calloc(1, sizeof(*hdrs))) == NULL)
+	if ((hdrs = hpack_headerlist_new()) == NULL)
 		goto fail;
-	TAILQ_INIT(hdrs);
 
 	hpack->hcx_headers = hdrs;
 	hpack->hcx_next = NULL;
@@ -136,6 +135,25 @@ hpack_header_new(void)
 	return (calloc(1, sizeof(struct hpack_header)));
 }
 
+struct hpack_header *
+hpack_header_add(struct hpack_headerlist *hdrs,
+    const char *name, const char *value)
+{
+	struct hpack_header	*hdr;
+
+	if ((hdr = hpack_header_new()) == NULL)
+		return (NULL);
+	hdr->hdr_name = strdup(name);
+	hdr->hdr_value = strdup(value);
+	if (hdr->hdr_name == NULL || hdr->hdr_value == NULL) {
+		hpack_header_free(hdr);
+		return (NULL);
+	}
+	TAILQ_INSERT_TAIL(hdrs, hdr, hdr_entry);
+
+	return (hdr);
+}
+
 void
 hpack_header_free(struct hpack_header *hdr)
 {
@@ -146,11 +164,23 @@ hpack_header_free(struct hpack_header *hdr)
 	free(hdr);
 }
 
+struct hpack_headerlist *
+hpack_headerlist_new(void)
+{
+	struct hpack_headerlist	*hdrs;
+	if ((hdrs = calloc(1, sizeof(*hdrs))) == NULL)
+		return (NULL);
+	TAILQ_INIT(hdrs);
+	return (hdrs);
+}
+
 void
 hpack_headerlist_free(struct hpack_headerlist *hdrs)
 {
 	struct hpack_header	*hdr;
 
+	if (hdrs == NULL)
+		return;
 	while ((hdr = TAILQ_FIRST(hdrs)) != NULL) {
 		TAILQ_REMOVE(hdrs, hdr, hdr_entry);
 		hpack_header_free(hdr);

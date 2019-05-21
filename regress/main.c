@@ -20,6 +20,7 @@
 #include <sys/stat.h>
 
 #include <limits.h>
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -31,6 +32,21 @@
 
 #include "hpack.h"
 #include "extern.h"
+
+int	 verbose;
+
+static void
+log(int level, const char *fmt, ...)
+{
+	va_list	ap;
+
+	if (verbose < level)
+		return;
+
+	va_start(ap, fmt);
+	vprintf(fmt, ap);
+	va_end(ap);
+}
 
 static const char *
 json_uascii_decode(char *str)
@@ -123,14 +139,14 @@ hpack_headerblock_print(const char *prefix, struct hpack_headerblock *hdrs)
 	if (hdrs == NULL)
 		return (0);
 	if (TAILQ_EMPTY(hdrs)) {
-		printf("%s: empty headers\n", prefix);
+		log(2, "%s: empty headers\n", prefix);
 		return (-1);
 	}
 
 	TAILQ_FOREACH(hdr, hdrs, hdr_entry) {
 		if (hdr->hdr_name == NULL || hdr->hdr_value == NULL) {
 			if (prefix != NULL)
-				printf("%s invalid header: %s: %s\n", prefix,
+				log(2, "%s invalid header: %s: %s\n", prefix,
 				    hdr->hdr_name == NULL ?
 				    "(null)" : hdr->hdr_name,
 				    hdr->hdr_value == NULL ?
@@ -138,7 +154,7 @@ hpack_headerblock_print(const char *prefix, struct hpack_headerblock *hdrs)
 			return (-1);
 		}
 		if (prefix != NULL)
-			printf("%s %s: %s\n", prefix,
+			log(2, "%s %s: %s\n", prefix,
 			    hdr->hdr_name, hdr->hdr_value);
 	}
 
@@ -155,7 +171,7 @@ x2i(const char *s)
 	ss[2] = 0;
 
 	if (!isxdigit(s[0]) || !isxdigit(s[1])) {
-		printf("string needs to be specified in hex digits\n");
+		log(2, "string needs to be specified in hex digits\n");
 		return (-1);
 	}
 	return ((int)strtoul(ss, NULL, 16));
@@ -185,40 +201,39 @@ parsehex(const char *hex, unsigned char *buf, size_t len)
 }
 
 static int
-parse_hpack(const char *hex, struct hpack_headerblock *test,
+parse_hex(const char *hex, struct hpack_headerblock *test,
     struct hpack_table *hpack)
 {
 	struct hpack_headerblock	*hdrs = NULL;
 	unsigned char			 buf[8192];
 	ssize_t				 len;
-	extern const char		*__progname;
 	int				 ret = -1;
 
 	if ((len = parsehex(hex, buf, sizeof(buf))) == -1) {
-		printf("wire format is not a hex string\n");
+		log(2, "wire format is not a hex string\n");
 		goto fail;
 	}
 	if ((hdrs = hpack_decode(buf, len, hpack)) == NULL) {
-		printf("hpack_decode\n");
+		log(2, "hpack_decode\n");
 		goto fail;
 	}
-	if (hpack_headerblock_print(NULL, test) == -1) {
-		printf("test headers invalid\n");
+	if (test != NULL && hpack_headerblock_print(NULL, test) == -1) {
+		log(2, "test headers invalid\n");
 		goto fail;
 	}
 	if (hpack_headerblock_print(NULL, hdrs) == -1) {
-		printf("parsed headers invalid\n");
+		log(2, "parsed headers invalid\n");
 		goto fail;
 	}
-	if (hpack_headerblock_cmp(hdrs, test) != 0) {
-		printf("test headers mismatched\n");
+	if (test != NULL && hpack_headerblock_cmp(hdrs, test) != 0) {
+		log(2, "test headers mismatched\n");
 		goto fail;
 	}
 
 	ret = 0;
  fail:
 	if (ret != 0) {
-		printf(">>> wire: %s\n", hex);
+		log(2, ">>> wire: %s\n", hex);
 		hpack_headerblock_print(">>> header:", test);
 		hpack_headerblock_print("<<< parsed:", hdrs);
 	}
@@ -226,8 +241,75 @@ parse_hpack(const char *hex, struct hpack_headerblock *test,
 	return (ret);
 }
 
+static ssize_t
+parse_input(const char *name)
+{
+	struct hpack_table	*hpack = NULL;
+	FILE			*fp;
+	char			 buf[BUFSIZ];
+	ssize_t			 ok = 0, ret = -1;
+
+	if (strcmp("-", name) == 0)
+		fp = stdin;
+	else if ((fp = fopen(name, "r")) == NULL)
+		return (-1);
+
+	if ((hpack = hpack_table_new(0)) == NULL)
+		goto done;
+
+	while (fgets(buf, sizeof(buf), fp) != NULL) {
+		buf[strcspn(buf, "\r\n")] = '\0';
+		if (parse_hex(buf, NULL, hpack) == -1) {
+			log(1, "hex HPACK decoding failed\n");
+			goto done;
+		}
+		ok++;
+	}
+
+	ret = ok;
+ done:
+	if (fp != NULL && fp != stdin)
+		fclose(fp);
+	hpack_table_free(hpack);
+
+	return (ret);
+}
+
 static int
-parse_tests(char *argv[])
+parse_raw(const char *name)
+{
+	char				 buf[65535];
+	struct hpack_table		*hpack = NULL;
+	struct hpack_headerblock	*hdrs = NULL;
+	FILE				*fp;
+	int				 ret = -1;
+	size_t				 len;
+
+	if (strcmp("-", name) == 0)
+		fp = stdin;
+	else if ((fp = fopen(name, "r")) == NULL)
+		goto done;
+	if ((hpack = hpack_table_new(0)) == NULL)
+		goto done;
+	if ((len = fread(buf, 1, sizeof(buf), fp)) < 1)
+		goto done;
+	if ((hdrs = hpack_decode(buf, len, hpack)) == NULL) {
+		log(1, "raw HPACK decoding failed\n");
+		goto done;
+	}
+
+	ret = 0;
+ done:
+	if (fp != NULL && fp != stdin)
+		fclose(fp);
+	hpack_headerblock_free(hdrs);
+	hpack_table_free(hpack);
+
+	return (ret);
+}
+
+static int
+parse_dir(char *argv[])
 {
 	struct hpack_table		*hpack = NULL;
 	struct hpack_headerblock	*test = NULL;
@@ -238,7 +320,8 @@ parse_tests(char *argv[])
 	off_t				 size;
 	int				 ret = -1;
 	struct jsmnn			*json = NULL, *cases, *obj, *hdr, *hdrs;
-	size_t				 i = 0, j, k, ok = 0;
+	size_t				 i = 0, j, k;
+	ssize_t				 ok = 0;
 	const char			*errstr = NULL;
 	size_t				 table_size, init_table_size;
 
@@ -252,7 +335,22 @@ parse_tests(char *argv[])
 		if (ftsp->fts_info != FTS_F)
 			continue;
 
-		if (fnmatch("*.json", ftsp->fts_name,
+		if (fnmatch("*.hpacktest", ftsp->fts_name,
+		    FNM_PATHNAME) != FNM_NOMATCH) {
+			if ((ok = parse_input(ftsp->fts_accpath)) < 0) {
+				errstr = "hex input file parsing failed";
+				goto done;
+			}
+			goto next;
+		} else if (fnmatch("*.hpackraw", ftsp->fts_name,
+		    FNM_PATHNAME) != FNM_NOMATCH) {
+			if (parse_raw(ftsp->fts_accpath) == -1) {
+				errstr = "raw input file parsing failed";
+				goto done;
+			}
+			ok = 1;
+			goto next;
+		} else if (fnmatch("story_*.json", ftsp->fts_name,
 		    FNM_PATHNAME) == FNM_NOMATCH)
 			continue;
 		size = ftsp->fts_statp->st_size;
@@ -260,6 +358,7 @@ parse_tests(char *argv[])
 
 		if ((fp = fopen(ftsp->fts_accpath, "r")) == NULL)
 			continue;
+
 		if ((str = malloc(size)) == NULL) {
 			fclose(fp);
 			continue;
@@ -341,7 +440,7 @@ parse_tests(char *argv[])
 				}
 			}
 
-			if (parse_hpack(wire, test, hpack) == -1) {
+			if (parse_hex(wire, test, hpack) == -1) {
 				errstr = "failed to parse HPACK";
 				goto done;
 			}
@@ -359,26 +458,27 @@ parse_tests(char *argv[])
 		}
 
 		i = 0;
+		hpack_table_free(hpack);
+		hpack = NULL;
 		json_free(json);
 		json = NULL;
 		free(str);
 		str = NULL;
-		hpack_table_free(hpack);
-		hpack = NULL;
 
-		printf("SUCCESS: %s: %zu tests\n", ftsp->fts_path, ok);
+ next:
+		log(1, "SUCCESS: %s: %zu tests\n", ftsp->fts_path, ok);
 	}
 
 	ret = 0;
  done:
 	if (errstr != NULL && ftsp != NULL && i != 0)
-		printf("FAILED: %s: %s in test %zu\n",
+		log(1, "FAILED: %s: %s in test %zu\n",
 		    ftsp->fts_path, errstr, i);
 	else if (errstr != NULL && ftsp != NULL)
-		printf("FAILED: %s: %s\n",
+		log(1, "FAILED: %s: %s\n",
 		    ftsp->fts_path, errstr);
 	else if (errstr != NULL)
-		printf("FAILED: %s\n", errstr);
+		log(1, "FAILED: %s\n", errstr);
 	free(wire);
 	hpack_table_free(hpack);
 	hpack_headerblock_free(test);
@@ -389,26 +489,60 @@ parse_tests(char *argv[])
 	return (ret);
 }
 
+static __dead void
+usage(void)
+{
+	extern char	*__progname;
+
+	fprintf(stderr, "usage: %s [-h hex] [-i input-file] [-r raw-file]"
+	    " [dir ...]\n", __progname);
+	exit(1);
+}
+
 int
 main(int argc, char *argv[])
 {
-	const char		*hex;
+	const char	*hex = NULL, *input = NULL, *raw = NULL;
+	int		 ch;
 
 	if (hpack_init() == -1)
 		return (1);
 
-	if (argc > 1) {
-		argv++;
-		if (parse_tests(argv) == -1)
-			return (1);
-		return (0);
+	while ((ch = getopt(argc, argv, "h:i:r:v")) != -1) {
+		switch (ch) {
+		case 'i':
+			input = optarg;
+			break;
+		case 'h':
+			hex = optarg;
+			break;
+		case 'r':
+			raw = optarg;
+			break;
+		case 'v':
+			verbose++;
+			break;
+		default:
+			usage();
+		}
 	}
+	argc -= optind;
+	argv += optind;
 
-	/* HPACK-encoded test string */
-	hex = "4186a0e41d139d098284874085f2b24a84ff8849509089951a6dcf";
-
-	if (parse_hpack(hex, NULL, NULL) == -1)
-		return (1);
+	if (hex != NULL) {
+		if (parse_hex(hex, NULL, NULL) == -1)
+			return (1);
+	} else if (input != NULL) {
+		if (parse_input(input) == -1)
+			return (1);
+	} else if (raw != NULL) {
+		if (parse_raw(raw) == -1)
+			return (1);
+	} else if (argc > 0) {
+		if (parse_dir(argv) == -1)
+			return (1);
+	} else
+		usage();
 
 	return (0);
 }

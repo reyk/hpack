@@ -242,7 +242,7 @@ parse_hex(const char *hex, struct hpack_headerblock *test,
 }
 
 static ssize_t
-parse_input(const char *name)
+parse_input(const char *name, size_t init_table_size)
 {
 	struct hpack_table	*hpack = NULL;
 	FILE			*fp;
@@ -254,7 +254,7 @@ parse_input(const char *name)
 	else if ((fp = fopen(name, "r")) == NULL)
 		return (-1);
 
-	if ((hpack = hpack_table_new(0)) == NULL)
+	if ((hpack = hpack_table_new(init_table_size)) == NULL)
 		goto done;
 
 	while (fgets(buf, sizeof(buf), fp) != NULL) {
@@ -276,7 +276,7 @@ parse_input(const char *name)
 }
 
 static int
-parse_raw(const char *name)
+parse_raw(const char *name, size_t init_table_size)
 {
 	char				 buf[65535];
 	struct hpack_table		*hpack = NULL;
@@ -289,7 +289,7 @@ parse_raw(const char *name)
 		fp = stdin;
 	else if ((fp = fopen(name, "r")) == NULL)
 		goto done;
-	if ((hpack = hpack_table_new(0)) == NULL)
+	if ((hpack = hpack_table_new(init_table_size)) == NULL)
 		goto done;
 	if ((len = fread(buf, 1, sizeof(buf), fp)) < 1)
 		goto done;
@@ -309,7 +309,7 @@ parse_raw(const char *name)
 }
 
 static int
-parse_dir(char *argv[])
+parse_dir(char *argv[], size_t init_table_size)
 {
 	struct hpack_table		*hpack = NULL;
 	struct hpack_headerblock	*test = NULL;
@@ -323,7 +323,7 @@ parse_dir(char *argv[])
 	size_t				 i = 0, j, k;
 	ssize_t				 ok = 0;
 	const char			*errstr = NULL;
-	size_t				 table_size, init_table_size;
+	size_t				 table_size, file_table_size;
 
 	if ((fts = fts_open(argv, FTS_COMFOLLOW|FTS_NOCHDIR,
 	    NULL)) == NULL) {
@@ -335,16 +335,20 @@ parse_dir(char *argv[])
 		if (ftsp->fts_info != FTS_F)
 			continue;
 
+		file_table_size = init_table_size;
+
 		if (fnmatch("*.hpacktest", ftsp->fts_name,
 		    FNM_PATHNAME) != FNM_NOMATCH) {
-			if ((ok = parse_input(ftsp->fts_accpath)) < 0) {
+			if ((ok = parse_input(ftsp->fts_accpath,
+			    file_table_size)) < 0) {
 				errstr = "hex input file parsing failed";
 				goto done;
 			}
 			goto next;
 		} else if (fnmatch("*.hpackraw", ftsp->fts_name,
 		    FNM_PATHNAME) != FNM_NOMATCH) {
-			if (parse_raw(ftsp->fts_accpath) == -1) {
+			if (parse_raw(ftsp->fts_accpath,
+			    file_table_size) == -1) {
 				errstr = "raw input file parsing failed";
 				goto done;
 			}
@@ -379,9 +383,6 @@ parse_dir(char *argv[])
 			goto done;
 		}
 
-		/* The default table size of the test cases is 4096 */
-		init_table_size = 4096;
-
 		for (i = 0; i < cases->fields; i++) {
 			if ((obj =
 			    json_getarrayobj(cases->d.array[i])) == NULL)
@@ -399,7 +400,7 @@ parse_dir(char *argv[])
 				if (errstr != NULL)
 					goto done;
 			} else
-				table_size = init_table_size;
+				table_size = file_table_size;
 			if ((hdrs = json_getarray(obj, "headers")) == NULL) {
 				errstr = "no headers found";
 				goto done;
@@ -431,10 +432,10 @@ parse_dir(char *argv[])
 			}
 
 			if (hpack == NULL) {
-				if (table_size > init_table_size)
-					init_table_size = table_size;
+				if (table_size > file_table_size)
+					file_table_size = table_size;
 				if ((hpack =
-				    hpack_table_new(init_table_size)) == NULL) {
+				    hpack_table_new(file_table_size)) == NULL) {
 					errstr = "failed to get HPACK table";
 					goto done;
 				}
@@ -533,13 +534,13 @@ main(int argc, char *argv[])
 		if (parse_hex(hex, NULL, NULL) == -1)
 			return (1);
 	} else if (input != NULL) {
-		if (parse_input(input) == -1)
+		if (parse_input(input, 4096) == -1)
 			return (1);
 	} else if (raw != NULL) {
-		if (parse_raw(raw) == -1)
+		if (parse_raw(raw, 4096) == -1)
 			return (1);
 	} else if (argc > 0) {
-		if (parse_dir(argv) == -1)
+		if (parse_dir(argv, 4096) == -1)
 			return (1);
 	} else
 		usage();

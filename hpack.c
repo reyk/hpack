@@ -363,7 +363,7 @@ hpack_decode_index(struct hbuf *buf, unsigned char prefix,
 	if (i == 0)
 		return (0);
 	if ((id = hpack_table_get(i, hpack)) == NULL) {
-		printf("index not found: %ld\n", i);
+		DPRINTF("index not found: %ld\n", i);
 		return (-1);
 	}
 

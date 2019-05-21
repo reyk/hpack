@@ -1,5 +1,6 @@
 HPACKSRCDIR=		${.CURDIR}/..
-HPACKTESTDIR=		${.CURDIR}/hpack-test-case
+HPACKTESTDIR+=		${.CURDIR}/hpack-test-samples
+HPACKTESTDIR+=		${.CURDIR}/hpack-test-case
 
 .PATH:	${HPACKSRCDIR}
 

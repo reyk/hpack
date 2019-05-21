@@ -751,6 +751,20 @@ static unsigned char *
 hbuf_release(struct hbuf *buf, size_t *len)
 {
 	unsigned char	*data;
+
+	/*
+	 * Adjust (shrink) buffer to the used size.  This allows to
+	 * safely call recallocarray() or freezero() later.
+	 */
+	if (buf->wpos != buf->size) {
+		if ((data = recallocarray(buf->data,
+		    buf->size, buf->wpos, 1)) == NULL) {
+			hbuf_free(buf);
+			return (NULL);
+		}
+		buf->data = data;
+	}
+
 	*len = buf->wpos;
 	data = buf->data;
 	free(buf);

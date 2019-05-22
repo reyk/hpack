@@ -33,34 +33,36 @@ TAILQ_HEAD(hpack_headerblock, hpack_header);
 
 int	 hpack_init(void);
 
-struct hpack_table *
-	 hpack_table_new(size_t);
+struct hpack_table
+	*hpack_table_new(size_t);
 void	 hpack_table_free(struct hpack_table *);
 size_t	 hpack_table_size(struct hpack_table *);
 
-struct hpack_headerblock *
-	 hpack_decode(unsigned char *, size_t, struct hpack_table *);
+struct hpack_headerblock
+	*hpack_decode(unsigned char *, size_t, struct hpack_table *);
 
-struct hpack_header *
-	 hpack_header_new(void);
-struct hpack_header *
-	 hpack_header_add(struct hpack_headerblock *,
+struct hpack_header
+	*hpack_header_new(void);
+struct hpack_header
+	*hpack_header_add(struct hpack_headerblock *,
 	    const char *key, const char *value);
 void	 hpack_header_free(struct hpack_header *);
-struct hpack_headerblock *
-	 hpack_headerblock_new(void);
+struct hpack_headerblock
+	*hpack_headerblock_new(void);
 void	 hpack_headerblock_free(struct hpack_headerblock *);
 
 unsigned char
 	*huffman_decode(unsigned char *, size_t, size_t *);
+unsigned char
+	*huffman_encode(unsigned char *, size_t, size_t *);
 char	*huffman_decode_str(unsigned char *, size_t);
 
 #ifdef HPACK_INTERNAL
 
 #ifndef DEBUG
-#define DPRINTF(x...)	do{} while(0)
+#define DPRINTF(x...)		do{} while(0)
 #else
-#define DPRINTF		warnx
+#define DPRINTF			warnx
 #endif
 
 /* from sys/param.h */

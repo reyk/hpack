@@ -11,6 +11,6 @@ CFLAGS+=		-DJSMN_PARENT_LINKS
 REGRESS_TARGETS?=	test
 
 test: ${PROG}
-	./${PROG} -vv ${HPACKTESTDIR}
+	./${PROG} -v ${HPACKTESTDIR}
 
 .include <bsd.regress.mk>

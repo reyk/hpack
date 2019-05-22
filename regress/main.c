@@ -33,6 +33,9 @@
 #include "hpack.h"
 #include "extern.h"
 
+static int	 encode_huffman(const char *);
+static int	 decode_huffman(const char *);
+
 int	 verbose;
 
 static void
@@ -291,8 +294,11 @@ parse_raw(const char *name, size_t init_table_size)
 		goto done;
 	if ((hpack = hpack_table_new(init_table_size)) == NULL)
 		goto done;
-	if ((len = fread(buf, 1, sizeof(buf), fp)) < 1)
+	if ((len = fread(buf, 1, sizeof(buf), fp)) < 1) {
+		if (feof(fp))
+			ret = 0;
 		goto done;
+	}
 	if ((hdrs = hpack_decode(buf, len, hpack)) == NULL) {
 		log(1, "raw HPACK decoding failed\n");
 		goto done;
@@ -350,6 +356,14 @@ parse_dir(char *argv[], size_t init_table_size)
 			if (parse_raw(ftsp->fts_accpath,
 			    file_table_size) == -1) {
 				errstr = "raw input file parsing failed";
+				goto done;
+			}
+			ok = 1;
+			goto next;
+		} else if (fnmatch("headers_??.txt", ftsp->fts_name,
+		    FNM_PATHNAME) != FNM_NOMATCH) {
+			if (encode_huffman(ftsp->fts_accpath) == -1) {
+				errstr = "huffman encoding failed";
 				goto done;
 			}
 			ok = 1;
@@ -490,13 +504,89 @@ parse_dir(char *argv[], size_t init_table_size)
 	return (ret);
 }
 
+static int
+encode_huffman(const char *name)
+{
+	char				 buf[65535];
+	char				*enc = NULL, *dec = NULL;
+	FILE				*fp;
+	int				 ret = -1;
+	size_t				 len = 0, enclen = 0, declen = 0;
+
+	if (strcmp("-", name) == 0)
+		fp = stdin;
+	else if ((fp = fopen(name, "r")) == NULL)
+		goto done;
+	if ((len = fread(buf, 1, sizeof(buf), fp)) < 1) {
+		if (feof(fp))
+			ret = 0;
+		goto done;
+	}
+	if ((enc = huffman_encode(buf, len, &enclen)) == NULL)
+		goto done;
+	if ((dec = huffman_decode(enc, enclen, &declen)) == NULL)
+		goto done;
+	if (memcmp(dec, buf, len) != 0)
+		goto done;
+
+	ret = 0;
+ done:
+	log(2, "%s: huffman lengths: raw input %zu,"
+	    " encoded output %zu, decoded %zu\n",
+	    ret == 0 ? "SUCCESS": "FAILED" , len, enclen, declen);
+	if (fp != NULL && fp != stdin)
+		fclose(fp);
+	free(enc);
+	free(dec);
+
+	return (ret);
+}
+
+static int
+decode_huffman(const char *name)
+{
+	char				 buf[65535];
+	char				*enc = NULL, *dec = NULL;
+	FILE				*fp;
+	int				 ret = -1;
+	size_t				 len = 0, enclen = 0, declen = 0;
+
+	if (strcmp("-", name) == 0)
+		fp = stdin;
+	else if ((fp = fopen(name, "r")) == NULL)
+		goto done;
+	if ((len = fread(buf, 1, sizeof(buf), fp)) < 1) {
+		if (feof(fp))
+			ret = 0;
+		goto done;
+	}
+	if ((dec = huffman_decode(buf, len, &declen)) == NULL)
+		goto done;
+	if ((enc = huffman_encode(dec, declen, &enclen)) == NULL)
+		goto done;
+	if (memcmp(enc, buf, len) != 0)
+		goto done;
+
+	ret = 0;
+ done:
+	log(2, "%s: huffman lengths: raw input %zu,"
+	    " decoded output %zu, encoded %zu\n",
+	    ret == 0 ? "SUCCESS": "FAILED" , len, declen, enclen);
+	if (fp != NULL && fp != stdin)
+		fclose(fp);
+	free(enc);
+	free(dec);
+
+	return (ret);
+}
+
 static __dead void
 usage(void)
 {
 	extern char	*__progname;
 
-	fprintf(stderr, "usage: %s [-h hex] [-i input-file] [-r raw-file]"
-	    " [dir ...]\n", __progname);
+	fprintf(stderr, "usage: %s [-d|e file] [-h hex] [-i input-file]"
+	    " [-r raw-file] [-x hex] [dir ...]\n", __progname);
 	exit(1);
 }
 
@@ -504,18 +594,25 @@ int
 main(int argc, char *argv[])
 {
 	const char	*hex = NULL, *input = NULL, *raw = NULL;
-	int		 ch;
+	const char	*huffenc = NULL, *huffdec = NULL;
+	int		 ch, ret;
 
 	if (hpack_init() == -1)
 		return (1);
 
-	while ((ch = getopt(argc, argv, "h:i:r:v")) != -1) {
+	while ((ch = getopt(argc, argv, "d:e:h:i:r:v")) != -1) {
 		switch (ch) {
-		case 'i':
-			input = optarg;
+		case 'd':
+			huffdec = optarg;
+			break;
+		case 'e':
+			huffenc = optarg;
 			break;
 		case 'h':
 			hex = optarg;
+			break;
+		case 'i':
+			input = optarg;
 			break;
 		case 'r':
 			raw = optarg;
@@ -530,20 +627,22 @@ main(int argc, char *argv[])
 	argc -= optind;
 	argv += optind;
 
-	if (hex != NULL) {
-		if (parse_hex(hex, NULL, NULL) == -1)
-			return (1);
-	} else if (input != NULL) {
-		if (parse_input(input, 4096) == -1)
-			return (1);
-	} else if (raw != NULL) {
-		if (parse_raw(raw, 4096) == -1)
-			return (1);
-	} else if (argc > 0) {
-		if (parse_dir(argv, 4096) == -1)
-			return (1);
-	} else
+	if (huffdec != NULL)
+		ret = decode_huffman(huffdec);
+	else if (huffenc != NULL)
+		ret = encode_huffman(huffenc);
+	else if (hex != NULL)
+		ret = parse_hex(hex, NULL, NULL);
+	else if (input != NULL)
+		ret = parse_input(input, 4096);
+	else if (raw != NULL)
+		ret = parse_raw(raw, 4096);
+	else if (argc > 0)
+		ret = parse_dir(argv, 4096);
+	else
 		usage();
+	if (ret == -1)
+		return (1);
 
 	return (0);
 }

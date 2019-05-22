@@ -557,6 +557,7 @@ huffman_init(void)
 	struct huffman_node	*root, *cur, *node;
 	unsigned int		 i, j;
 
+	/* Create new Huffmann tree */
 	if ((root = huffman_new()) == NULL)
 		return (-1);
 
@@ -564,6 +565,7 @@ huffman_init(void)
 		hph = &huffman_table[i];
 		cur = root;
 
+		/* Create branch for each symbol */
 		for (j = hph->hph_length; j > 0; j--) {
 			if ((hph->hph_code >> (j - 1)) & 1) {
 				if (cur->hpn_one == NULL) {
@@ -581,6 +583,8 @@ huffman_init(void)
 				cur = cur->hpn_zero;
 			}
 		}
+
+		/* The leaf node contains the (8-bit ASCII) symbol */
 		cur->hpn_sym = i;
 	}
 
@@ -608,6 +612,7 @@ huffman_decode(unsigned char *buf, size_t len, size_t *decoded_len)
 	for (i = 0; i < len; i++) {
 		code = buf[i];
 
+		/* Walk the Huffman tree for each bit in the encoded input */
 		for (j = 8; j > 0; j--) {
 			if ((code >> (j - 1)) & 1)
 				node = node->hpn_one;
@@ -615,6 +620,8 @@ huffman_decode(unsigned char *buf, size_t len, size_t *decoded_len)
 				node = node->hpn_zero;
 			if (node->hpn_sym == -1)
 				continue;
+
+			/* Leaf node of the next (8-bit ASCII) symbol */
 			if (hbuf_writechar(hbuf,
 			    (unsigned char)node->hpn_sym) == -1) {
 				DPRINTF("%s: failed to add '%c'", __func__,
@@ -655,6 +662,65 @@ huffman_decode_str(unsigned char *buf, size_t len)
 	}
 
 	return (str);
+}
+
+unsigned char *
+huffman_encode(unsigned char *data, size_t len, size_t *encoded_len)
+{
+	struct hbuf		*hbuf;
+	struct hpack_huffman	*hph;
+	unsigned int		 code, i, j;
+	unsigned char		 o, obits;
+
+	if ((hbuf = hbuf_new(NULL, len)) == NULL)
+		return (NULL);
+
+	for (i = 0, o = 0, obits = 8; i < len; i++) {
+		/* Get Huffman code for each (8-bit ASCII) symbol */
+		hph = &huffman_table[data[i]];
+
+		for (code = hph->hph_code, j = hph->hph_length; j > 0;) {
+			if (j > obits) {
+				/* More bits to encode for this symbol */
+				j -= obits;
+				o |= (code >> j) & 0xff;
+				obits = 0;
+			} else {
+				/*
+				 * Remaining bits to encode for this input
+				 * input symbol.  The output byte will include
+				 * bits from the next symbol or padding.
+				 */
+				obits -= j;
+				o |= (code << obits) & 0xff;
+				j = 0;
+			}
+			if (obits == 0) {
+				if (hbuf_writechar(hbuf, o) == -1) {
+					DPRINTF("%s: failed to add '%c'",
+					    __func__, o);
+					goto fail;
+				}
+				o = 0;
+				obits = 8;
+			}
+		}
+	}
+
+	if (len && obits > 0) {
+		/* Pad last octet with ones (EOS) */
+		o |= (1 << obits) - 1;
+		if (hbuf_writechar(hbuf, o) == -1) {
+			DPRINTF("%s: failed to add '%c'", __func__, o);
+			goto fail;
+		}
+	}
+
+	return (hbuf_release(hbuf, encoded_len));
+ fail:
+	*encoded_len = 0;
+	hbuf_free(hbuf);
+	return (NULL);
 }
 
 static struct huffman_node *

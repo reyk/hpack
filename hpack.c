@@ -801,7 +801,7 @@ hbuf_advance(struct hbuf *buf, size_t len)
 static size_t
 hbuf_left(struct hbuf *buf)
 {
-	if (buf->rpos >= buf->size)
+	if (buf->rpos >= buf->wpos)
 		return (0);
-	return (buf->size - buf->rpos);
+	return (buf->wpos - buf->rpos);
 }

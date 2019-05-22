@@ -602,7 +602,7 @@ huffman_decode(unsigned char *buf, size_t len, size_t *decoded_len)
 	if ((root = node = hpack_global.hpack_huffman) == NULL)
 		errx(1, "hpack not initialized");
 
-	if ((hbuf = hbuf_new(NULL, HUFFMAN_BUFSZ)) == NULL)
+	if ((hbuf = hbuf_new(NULL, len)) == NULL)
 		return (NULL);
 
 	for (i = 0; i < len; i++) {
@@ -680,21 +680,21 @@ huffman_free(struct huffman_node *root)
 }
 
 static struct hbuf *
-hbuf_new(unsigned char *data, size_t size)
+hbuf_new(unsigned char *data, size_t len)
 {
 	struct hbuf	*buf;
+	size_t		 size = len;
 
 	if ((buf = calloc(1, sizeof(*buf))) == NULL)
 		return (NULL);
-	if (size == 0)
-		size = HUFFMAN_BUFSZ;
+	size = MAX(HUFFMAN_BUFSZ, len);
 	if ((buf->data = calloc(1, size)) == NULL) {
 		free(buf);
 		return (NULL);
 	}
 	if (data != NULL) {
-		memcpy(buf->data, data, size);
-		buf->wpos = size;
+		memcpy(buf->data, data, len);
+		buf->wpos = len;
 	}
 	buf->size = buf->wbsz = size;
 	return (buf);
@@ -764,7 +764,8 @@ hbuf_release(struct hbuf *buf, size_t *len)
 		}
 		buf->data = data;
 	}
-
+	DPRINTF("%s: wpos %zu rpos %zu size %zu",
+	    __func__, buf->wpos, buf->rpos, buf->size);
 	*len = buf->wpos;
 	data = buf->data;
 	free(buf);

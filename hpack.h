@@ -63,6 +63,9 @@ char	*huffman_decode_str(unsigned char *, size_t);
 #define DPRINTF		warnx
 #endif
 
+/* from sys/param.h */
+#define MAX(a,b)		(((a)>(b))?(a):(b))
+
 #define HUFFMAN_BUFSZ		256
 #define HPACK_MAX_TABLE_SIZE	4096
 

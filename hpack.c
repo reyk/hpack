@@ -71,50 +71,6 @@ hpack_init(void)
 	return (0);
 }
 
-struct hpack_headerblock *
-hpack_decode(unsigned char *buf, size_t len, struct hpack_table *hpack)
-{
-	struct hpack_headerblock	*hdrs = NULL;
-	struct hbuf			*hbuf = NULL;
-	struct hpack_table		*ctx = NULL;
-	int				 ret = -1;
-
-	if (len == 0 || len > LONG_MAX)
-		goto fail;
-
-	if (hpack == NULL && (hpack = ctx = hpack_table_new(0)) == NULL)
-		goto fail;
-	if ((hdrs = hpack_headerblock_new()) == NULL)
-		goto fail;
-
-	hpack->htb_headers = hdrs;
-	hpack->htb_next = NULL;
-
-	if ((hbuf = hbuf_new(buf, len)) == NULL)
-		goto fail;
-
-	do {
-		if (hpack_decode_buf(hbuf, hpack) == -1)
-			goto fail;
-	} while (hbuf_left(hbuf) > 0);
-
-	ret = 0;
- fail:
-	hbuf_free(hbuf);
-	if (ret != 0) {
-		hpack_headerblock_free(hdrs);
-		hdrs = NULL;
-	} else
-		hdrs = hpack->htb_headers;
-	hpack->htb_headers = NULL;
-	hpack->htb_next = NULL;
-
-	/* Free the local table (for single invocations) */
-	hpack_table_free(ctx);
-
-	return (hdrs);
-}
-
 struct hpack_header *
 hpack_header_new(void)
 {
@@ -312,6 +268,50 @@ hpack_table_size(struct hpack_table *hpack)
 	return ((size_t)hpack->htb_dynamic_size);
 }
 
+struct hpack_headerblock *
+hpack_decode(unsigned char *buf, size_t len, struct hpack_table *hpack)
+{
+	struct hpack_headerblock	*hdrs = NULL;
+	struct hbuf			*hbuf = NULL;
+	struct hpack_table		*ctx = NULL;
+	int				 ret = -1;
+
+	if (len == 0 || len > LONG_MAX)
+		goto fail;
+
+	if (hpack == NULL && (hpack = ctx = hpack_table_new(0)) == NULL)
+		goto fail;
+	if ((hdrs = hpack_headerblock_new()) == NULL)
+		goto fail;
+
+	hpack->htb_headers = hdrs;
+	hpack->htb_next = NULL;
+
+	if ((hbuf = hbuf_new(buf, len)) == NULL)
+		goto fail;
+
+	do {
+		if (hpack_decode_buf(hbuf, hpack) == -1)
+			goto fail;
+	} while (hbuf_left(hbuf) > 0);
+
+	ret = 0;
+ fail:
+	hbuf_free(hbuf);
+	if (ret != 0) {
+		hpack_headerblock_free(hdrs);
+		hdrs = NULL;
+	} else
+		hdrs = hpack->htb_headers;
+	hpack->htb_headers = NULL;
+	hpack->htb_next = NULL;
+
+	/* Free the local table (for single invocations) */
+	hpack_table_free(ctx);
+
+	return (hdrs);
+}
+
 static long
 hpack_decode_int(struct hbuf *buf, unsigned char prefix)
 {
@@ -325,11 +325,14 @@ hpack_decode_int(struct hbuf *buf, unsigned char prefix)
 	    hbuf_advance(buf, 1) == -1)
 		return (-1);
 
+	/* Mask and remaining bits after the prefix of the first octet */
 	m = 0xff >> (8 - prefix);
 	i = b & m;
 
 	if (i >= m) {
 		m = 0;
+
+		/* Read varint bits while the 0x80 bit is set */
 		do {
 			if (i > LONG_MAX)
 				return (-1);
@@ -550,7 +553,7 @@ hpack_decode_buf(struct hbuf *buf, struct hpack_table *hpack)
 	return (-1);
 }
 
-int
+static int
 huffman_init(void)
 {
 	struct hpack_huffman	*hph;

@@ -688,8 +688,8 @@ huffman_encode(unsigned char *data, size_t len, size_t *encoded_len)
 			} else {
 				/*
 				 * Remaining bits to encode for this input
-				 * input symbol.  The output byte will include
-				 * bits from the next symbol or padding.
+				 * symbol.  The current output octet will
+				 * include bits from the next symbol or padding.
 				 */
 				obits -= j;
 				o |= (code << obits) & 0xff;

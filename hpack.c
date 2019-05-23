@@ -29,18 +29,25 @@
 #include "hpack.h"
 
 static const struct hpack_index *
-		 hpack_table_get(long, struct hpack_table *);
+		 hpack_table_getbyid(long, struct hpack_table *);
+static const struct hpack_index *
+		 hpack_table_getbyheader(struct hpack_header *,
+		    struct hpack_table *);
 static int	 hpack_table_add(struct hpack_header *,
 		    struct hpack_table *);
 static int	 hpack_table_evict(long, long, struct hpack_table *);
 static int	 hpack_table_setsize(long, struct hpack_table *);
 
+static long	 hpack_decode_int(struct hbuf *, unsigned char);
 static char	*hpack_decode_str(struct hbuf *, unsigned char);
 static int	 hpack_decode_buf(struct hbuf *, struct hpack_table *);
 static long	 hpack_decode_index(struct hbuf *, unsigned char,
 		    const struct hpack_index **, struct hpack_table *);
 static int	 hpack_decode_literal(struct hbuf *, unsigned char,
 		    struct hpack_table *);
+static int	 hpack_encode_int(struct hbuf *, long, unsigned char,
+		    unsigned char);
+static int	 hpack_encode_str(struct hbuf *, char *);
 
 static int	 huffman_init(void);
 static struct huffman_node *
@@ -156,7 +163,7 @@ hpack_table_free(struct hpack_table *hpack)
 }
 
 static const struct hpack_index *
-hpack_table_get(long index, struct hpack_table *hpack)
+hpack_table_getbyid(long index, struct hpack_table *hpack)
 {
 	static struct hpack_index	 idbuf;
 	struct hpack_index		*id = NULL;
@@ -190,10 +197,68 @@ hpack_table_get(long index, struct hpack_table *hpack)
 	return (id);
 }
 
+static const struct hpack_index *
+hpack_table_getbyheader(struct hpack_header *key, struct hpack_table *hpack)
+{
+	static struct hpack_index	 idbuf;
+	struct hpack_index		*id = NULL, *firstid = NULL;
+	struct hpack_header		*hdr;
+	size_t				 i, dynidx = HPACK_STATIC_SIZE;
+
+	if (key->hdr_name == NULL)
+		return (NULL);
+
+	/*
+	 * Search the static and dynamic tables for a perfect match
+	 * or the first match that only matches the name.
+	 */
+
+	/* Static table */
+	for (i = 0; i < dynidx; i++) {
+		id = &static_table[i];
+		if (strcasecmp(id->hpi_name, key->hdr_name) != 0)
+			continue;
+		if (firstid == NULL) {
+			memcpy(&idbuf, id, sizeof(*id));
+			idbuf.hpi_value = NULL;
+			firstid = &idbuf;
+		}
+		if ((id->hpi_value != NULL && key->hdr_value != NULL) &&
+		    strcasecmp(id->hpi_value, key->hdr_value) == 0) {
+			return (id);
+		}
+	}
+
+	/* Dynamic table */
+	TAILQ_FOREACH_REVERSE(hdr, hpack->htb_dynamic,
+	    hpack_headerblock, hdr_entry) {
+		dynidx++;
+		if (strcasecmp(hdr->hdr_name, key->hdr_name) != 0)
+			continue;
+		if (firstid == NULL) {
+			idbuf.hpi_id = dynidx;
+			idbuf.hpi_name = hdr->hdr_name;
+			idbuf.hpi_value = NULL;
+			firstid = &idbuf;
+		}
+		if ((hdr->hdr_value != NULL && key->hdr_value != NULL) &&
+		    strcasecmp(hdr->hdr_value, key->hdr_value) == 0) {
+			idbuf.hpi_id = dynidx;
+			idbuf.hpi_name = hdr->hdr_name;
+			idbuf.hpi_value = hdr->hdr_value;
+			id = &idbuf;
+			return (id);
+		}
+	}
+
+	return (firstid);
+}
+
 static int
 hpack_table_add(struct hpack_header *hdr, struct hpack_table *hpack)
 {
-	long		 newsize;
+	struct hpack_header	*newhdr;
+	long			 newsize;
 
 	if (hdr->hdr_index != HPACK_INDEX)
 		return (0);
@@ -216,9 +281,10 @@ hpack_table_add(struct hpack_header *hdr, struct hpack_table *hpack)
 		hpack_table_evict(hpack->htb_table_size,
 		    newsize, hpack);
 
-	if (hpack_header_add(hpack->htb_dynamic,
-	    hdr->hdr_name, hdr->hdr_value) == NULL)
+	if ((newhdr = hpack_header_add(hpack->htb_dynamic,
+	    hdr->hdr_name, hdr->hdr_value)) == NULL)
 		return (-1);
+	newhdr->hdr_index = hdr->hdr_index;
 	hpack->htb_dynamic_entries++;
 	hpack->htb_dynamic_size += newsize;
 
@@ -315,18 +381,18 @@ hpack_decode(unsigned char *buf, size_t len, struct hpack_table *hpack)
 static long
 hpack_decode_int(struct hbuf *buf, unsigned char prefix)
 {
-	unsigned long	 i = 0, m;
-	unsigned char	 b = 0;
+	unsigned long	 i = 0;
+	unsigned char	 b = 0, m;
 
-	if (prefix > 8 || hbuf_left(buf) == 0)
+	if (hbuf_left(buf) == 0)
 		return (-1);
 
 	if (hbuf_readchar(buf, &b) == -1 ||
 	    hbuf_advance(buf, 1) == -1)
 		return (-1);
 
-	/* Mask and remaining bits after the prefix of the first octet */
-	m = 0xff >> (8 - prefix);
+	/* Mask and remainder after the prefix of the first octet */
+	m = ~prefix;
 	i = b & m;
 
 	if (i >= m) {
@@ -365,7 +431,7 @@ hpack_decode_index(struct hbuf *buf, unsigned char prefix,
 
 	if (i == 0)
 		return (0);
-	if ((id = hpack_table_get(i, hpack)) == NULL) {
+	if ((id = hpack_table_getbyid(i, hpack)) == NULL) {
 		DPRINTF("index not found: %ld\n", i);
 		return (-1);
 	}
@@ -408,8 +474,8 @@ hpack_decode_str(struct hbuf *buf, unsigned char prefix)
 	if (hbuf_readbuf(buf, &ptr, (size_t)i) == -1 ||
 	    hbuf_advance(buf, (size_t)i) == -1)
 		return (NULL);
-	if ((c & 0x80) == 0x80) {
-		DPRINTF("%s: decoding huffman code", __func__);
+	if ((c & HPACK_M_LITERAL) == HPACK_F_LITERAL_HUFFMAN) {
+		DPRINTF("%s: decoding huffman code (size %ld)", __func__, i);
 		if ((str = huffman_decode_str(ptr, (size_t)i)) == NULL)
 			return (NULL);
 	} else {
@@ -437,7 +503,8 @@ hpack_decode_literal(struct hbuf *buf, unsigned char prefix,
 		    hdr->hdr_name != NULL || hdr->hdr_value != NULL)
 			errx(1, "invalid header");
 
-		if ((str = hpack_decode_str(buf, 7)) == NULL)
+		if ((str = hpack_decode_str(buf,
+		    HPACK_M_LITERAL)) == NULL)
 			return (-1);
 		DPRINTF("%s: name: %s", __func__, str);
 		hdr->hdr_name = str;
@@ -449,7 +516,7 @@ hpack_decode_literal(struct hbuf *buf, unsigned char prefix,
 		hdr->hdr_value = NULL;
 	}
 
-	if ((str = hpack_decode_str(buf, 7)) == NULL)
+	if ((str = hpack_decode_str(buf, HPACK_M_LITERAL)) == NULL)
 		return (-1);
 	DPRINTF("%s: value: %s", __func__, str);
 	hdr->hdr_value = str;
@@ -469,14 +536,16 @@ hpack_decode_buf(struct hbuf *buf, struct hpack_table *hpack)
 
 	if ((hdr = hpack_header_new()) == NULL)
 		goto fail;
+	hdr->hdr_index = HPACK_NO_INDEX;
 	hpack->htb_next = hdr;
 
 	/* 6.1 Indexed Header Field Representation */
-	if ((c & 0x80) == 0x80) {
+	if ((c & HPACK_M_INDEX) == HPACK_F_INDEX) {
 		DPRINTF("%s: 0x%02x: 6.1 index", __func__, c);
 
 		/* 7 bit index */
-		if ((i = hpack_decode_index(buf, 7, NULL, hpack)) == -1)
+		if ((i = hpack_decode_index(buf,
+		    HPACK_M_INDEX, NULL, hpack)) == -1)
 			goto fail;
 
 		/* No value means header with empty value */
@@ -486,40 +555,44 @@ hpack_decode_buf(struct hbuf *buf, struct hpack_table *hpack)
 	}
 
 	/* 6.2.1. Literal Header Field with Incremental Indexing */
-	else if ((c & 0xc0) == 0x40) {
+	else if ((c & HPACK_M_LITERAL_INDEX) == HPACK_F_LITERAL_INDEX) {
 		DPRINTF("%s: 0x%02x: 6.2.1 literal indexed", __func__, c);
 
 		/* 6 bit index */
-		if (hpack_decode_literal(buf, 6, hpack) == -1)
+		if (hpack_decode_literal(buf,
+		    HPACK_M_LITERAL_INDEX, hpack) == -1)
 			goto fail;
 		hdr->hdr_index = HPACK_INDEX;
 	}
 
 	/* 6.2.2. Literal Header Field without Indexing */
-	else if ((c & 0xf0) == 0x00) {
+	else if ((c & HPACK_M_LITERAL_NO_INDEX) == HPACK_F_LITERAL_NO_INDEX) {
 		DPRINTF("%s: 0x%02x: 6.2.2 literal", __func__, c);
 
 		/* 4 bit index */
-		if (hpack_decode_literal(buf, 4, hpack) == -1)
+		if (hpack_decode_literal(buf,
+		    HPACK_M_LITERAL_NO_INDEX, hpack) == -1)
 			goto fail;
 	}
 
 	/* 6.2.3. Literal Header Field Never Indexed */
-	else if ((c & 0xf0) == 0x10) {
+	else if ((c & HPACK_M_LITERAL_NO_INDEX) == HPACK_F_LITERAL_NO_INDEX) {
 		DPRINTF("%s: 0x%02x: 6.2.3 literal never indexed", __func__, c);
 
 		/* 4 bit index */
-		if (hpack_decode_literal(buf, 4, hpack) == -1)
+		if (hpack_decode_literal(buf,
+		    HPACK_M_LITERAL_NO_INDEX, hpack) == -1)
 			goto fail;
 		hdr->hdr_index = HPACK_NEVER_INDEX;
 	}
 
 	/* 6.3. Dynamic Table Size Update */
-	else if ((c & 0xe0) == 0x20) {
+	else if ((c & HPACK_M_TABLE_SIZE_UPDATE) == HPACK_F_TABLE_SIZE_UPDATE) {
 		DPRINTF("%s: 0x%02x: 6.3 dynamic table update", __func__, c);
 
 		/* 5 bit index */
-		if ((i = hpack_decode_int(buf, 5)) == -1)
+		if ((i = hpack_decode_int(buf,
+		    HPACK_M_TABLE_SIZE_UPDATE)) == -1)
 			goto fail;
 
 		if (hpack_table_setsize(i, hpack) == -1)
@@ -537,6 +610,7 @@ hpack_decode_buf(struct hbuf *buf, struct hpack_table *hpack)
 	if (hdr->hdr_name == NULL || hdr->hdr_value == NULL)
 		goto fail;
 
+	/* Optionally add to index */
 	if (hpack_table_add(hdr, hpack) == -1)
 		goto fail;
 
@@ -553,6 +627,167 @@ hpack_decode_buf(struct hbuf *buf, struct hpack_table *hpack)
 	return (-1);
 }
 
+unsigned char *
+hpack_encode(struct hpack_headerblock *hdrs, size_t *encoded_len,
+    struct hpack_table *hpack)
+{
+	const struct hpack_index	*id;
+	struct hpack_table		*ctx = NULL;
+	struct hpack_header		*hdr;
+	struct hbuf			*hbuf = NULL;
+	unsigned char			 mask, flag;
+
+	if (hpack == NULL && (hpack = ctx = hpack_table_new(0)) == NULL)
+		goto fail;
+
+	if ((hbuf = hbuf_new(NULL, BUFSIZ)) == NULL)
+		goto fail;
+
+	TAILQ_FOREACH(hdr, hdrs, hdr_entry) {
+		DPRINTF("%s: header %s: %s (index %d)", __func__,
+		    hdr->hdr_name,
+		    hdr->hdr_value == NULL ? "(null)" : hdr->hdr_value,
+		    hdr->hdr_index);
+
+		switch (hdr->hdr_index) {
+		case HPACK_INDEX:
+			mask = HPACK_M_LITERAL_INDEX;
+			flag = HPACK_F_LITERAL_INDEX;
+			break;
+		case HPACK_NO_INDEX:
+			mask = HPACK_M_LITERAL_NO_INDEX;
+			flag = HPACK_F_LITERAL_NO_INDEX;
+			break;
+		case HPACK_NEVER_INDEX:
+			mask = HPACK_M_LITERAL_NEVER_INDEX;
+			flag = HPACK_F_LITERAL_NEVER_INDEX;
+			break;
+		}
+
+		id = hpack_table_getbyheader(hdr, hpack);
+
+		/* 6.1 Indexed Header Field Representation */
+		if (id != NULL && id->hpi_value != NULL) {
+			DPRINTF("%s: index %zu (%s: %s)", __func__,
+			    id->hpi_id,
+			    id->hpi_name,
+			    id->hpi_value == NULL ? "(null)" : id->hpi_value);
+			if (hpack_encode_int(hbuf, id->hpi_id,
+			    HPACK_M_INDEX, HPACK_F_INDEX) == -1)
+				goto fail;
+			continue;
+		}
+
+		/* 6.2 Literal Header Field Representation */
+		else if (id != NULL) {
+			DPRINTF("%s: index+name %zu, %s", __func__,
+			    id->hpi_id,
+			    hdr->hdr_value);
+
+			if (hpack_encode_int(hbuf, id->hpi_id,
+			    mask, flag) == -1)
+				goto fail;
+		} else {
+			DPRINTF("%s: literal %s: %s", __func__,
+			    hdr->hdr_name,
+			    hdr->hdr_value);
+
+			if (hpack_encode_int(hbuf, 0, mask, flag) == -1)
+				goto fail;
+
+			/* name */
+			if (hpack_encode_str(hbuf, hdr->hdr_name) == -1)
+				goto fail;
+		}
+
+		/* value */
+		if (hpack_encode_str(hbuf, hdr->hdr_value) == -1)
+			goto fail;
+
+		/* Optionally add to index */
+		if (hpack_table_add(hdr, hpack) == -1)
+			goto fail;
+	}
+
+	return (hbuf_release(hbuf, encoded_len));
+ fail:
+	hpack_table_free(ctx);
+	hbuf_free(hbuf);
+	return (NULL);
+}
+
+static int
+hpack_encode_int(struct hbuf *buf, long i, unsigned char prefix,
+    unsigned char type)
+{
+	unsigned char	b, m;
+
+	if (i < 0)
+		return (-1);
+
+	/* The first octet encodes up to prefix length bits */
+	m = ~prefix;
+	if (i <= m)
+		b = (i & m) | type;
+	else
+		b = m | type;
+	if (hbuf_writechar(buf, b) == -1)
+		return (-1);
+	i -= m;
+
+	/* Encode the remainder as a varint */
+	for (m = 0x80; i >= m; i /= m) {
+		b = i % m + m;
+		/* Set the continuation bit if there are steps left */
+		if (i >= m)
+			b |= m;
+		if (hbuf_writechar(buf, b) == -1)
+			return (-1);
+	}
+	if (i > 0 &&
+	    hbuf_writechar(buf, (unsigned char)i) == -1)
+		return (-1);
+
+	return (0);
+}
+
+static int
+hpack_encode_str(struct hbuf *buf, char *str)
+{
+	unsigned char	*data = NULL;
+	size_t		 len, slen;
+	int		 ret = -1;
+
+	/*
+	 * We have to decide if the string should be encoded with huffman
+	 * encoding or as literal string.  There could be better heuristics
+	 * to do this...
+	 */
+	slen = strlen(str);
+	if ((data = huffman_encode(str, slen, &len)) == NULL)
+		goto done;
+	if (len > 0 && len < slen) {
+		DPRINTF("%s: encoded huffman code (size %ld, from %ld)",
+		    __func__, len, slen);
+		if (hpack_encode_int(buf, len, HPACK_M_LITERAL,
+		    HPACK_F_LITERAL_HUFFMAN) == -1)
+			goto done;
+		if (hbuf_writebuf(buf, data, len) == -1)
+			goto done;
+	} else {
+		if (hpack_encode_int(buf, slen, HPACK_M_LITERAL,
+		    HPACK_F_LITERAL) == -1)
+			goto done;
+		if (hbuf_writebuf(buf, str, slen) == -1)
+			goto done;
+	}
+
+	ret = 0;
+ done:
+	free(data);
+	return (ret);
+}
+
 static int
 huffman_init(void)
 {
@@ -560,7 +795,7 @@ huffman_init(void)
 	struct huffman_node	*root, *cur, *node;
 	unsigned int		 i, j;
 
-	/* Create new Huffmann tree */
+	/* Create new Huffman tree */
 	if ((root = huffman_new()) == NULL)
 		return (-1);
 
@@ -710,7 +945,7 @@ huffman_encode(unsigned char *data, size_t len, size_t *encoded_len)
 		}
 	}
 
-	if (len && obits > 0) {
+	if (len && obits > 0 && obits < 8) {
 		/* Pad last octet with ones (EOS) */
 		o |= (1 << obits) - 1;
 		if (hbuf_writechar(hbuf, o) == -1) {
@@ -833,11 +1068,11 @@ hbuf_release(struct hbuf *buf, size_t *len)
 		}
 		buf->data = data;
 	}
-	DPRINTF("%s: wpos %zu rpos %zu size %zu",
-	    __func__, buf->wpos, buf->rpos, buf->size);
+
 	*len = buf->wpos;
 	data = buf->data;
 	free(buf);
+
 	return (data);
 }
 

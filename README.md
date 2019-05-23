@@ -1,27 +1,30 @@
 hpack
 =====
 
-> WIP!!! THIS CODE IS NOT FINISHED YET!!!
-
 1. Why another HPACK implementation?
 
-  I either didn't like the license or the style of the existing C code.
-And I wanted to have a small HPACK implementation that fits into a
-single `.c` and `.h` file.
+   I either didn't like the license or the style of the existing C code.
+   And I wanted to have a small HPACK implementation that fits into a
+   single `.c` and `.h` file.  As a design decision, I decided to be
+   extra careful with input and output buffers: avoiding to use
+   dangerous pointer arithmetics, using allocated (heap) data instead
+   of stack buffers, depending extra features of OpenBSD's "otto" malloc(3).
 
 2. What is the purpose of this HPACK code?
 
-  I want to include it, one day, into relayd or httpd.
+   I want to include it, one day, into [relayd or httpd][1].
 
 3. Why is this an OpenBSD library?
 
-  This is just for testing and development.  The final code will
-eventually be included into the software under OpenBSD.
+   This is just for testing and development.  The final code will
+   eventually be included into the software under [OpenBSD][2].
 
 TODO
 ----
 
-- encoding
+- optimizations (heuristics to decide on huffman encoding, header indexing, ...)
+- manpage (not really needed, but because "we can").
+- more tests and fuzzing (I already did some hours of [afl][3] fuzzing).
 
 TESTS
 -----
@@ -445,3 +448,7 @@ SUCCESS: regress/hpack-test-case/python-hpack/story_30.json: 646 tests
 SUCCESS: regress/hpack-test-case/python-hpack/story_31.json: 117 tests
 
 ```
+
+[1]: https://bsd.plumbing/
+[2]: https://www.openbsd.org/
+[3]: http://lcamtuf.coredump.cx/afl/

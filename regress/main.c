@@ -204,22 +204,17 @@ parsehex(const char *hex, unsigned char *buf, size_t len)
 }
 
 static int
-parse_hex(const char *hex, struct hpack_headerblock *test,
-    struct hpack_table *hpack)
+parse_data(unsigned char *buf, size_t len,
+    struct hpack_headerblock *test, struct hpack_table *hpack)
 {
 	struct hpack_headerblock	*hdrs = NULL;
-	unsigned char			 buf[8192];
-	ssize_t				 len;
 	int				 ret = -1;
 
-	if ((len = parsehex(hex, buf, sizeof(buf))) == -1) {
-		log(2, "wire format is not a hex string\n");
-		goto fail;
-	}
 	if ((hdrs = hpack_decode(buf, len, hpack)) == NULL) {
 		log(2, "hpack_decode\n");
 		goto fail;
 	}
+
 	if (test != NULL && hpack_headerblock_print(NULL, test) == -1) {
 		log(2, "test headers invalid\n");
 		goto fail;
@@ -228,20 +223,39 @@ parse_hex(const char *hex, struct hpack_headerblock *test,
 		log(2, "parsed headers invalid\n");
 		goto fail;
 	}
-	if (test != NULL && hpack_headerblock_cmp(hdrs, test) != 0) {
-		log(2, "test headers mismatched\n");
+	if (test != NULL && (ret = hpack_headerblock_cmp(hdrs, test)) != 0) {
+		log(2, "test headers mismatched (returned %d)\n", ret);
+		ret = -1;
 		goto fail;
 	}
 
 	ret = 0;
  fail:
 	if (ret != 0) {
-		log(2, ">>> wire: %s\n", hex);
 		hpack_headerblock_print(">>> header:", test);
 		hpack_headerblock_print("<<< parsed:", hdrs);
 	}
 	hpack_headerblock_free(hdrs);
 	return (ret);
+}
+
+static int
+parse_hex(const char *hex, struct hpack_headerblock *test,
+    struct hpack_table *hpack)
+{
+	unsigned char			 buf[8192];
+	ssize_t				 len;
+
+	if ((len = parsehex(hex, buf, sizeof(buf))) == -1) {
+		log(2, "wire format is not a hex string\n");
+		return (-1);
+	}
+
+	if (parse_data(buf, len, test, hpack) == -1)
+		return (-1);
+
+	log(2, ">>> wire: %s\n", hex);
+	return (0);
 }
 
 static ssize_t
@@ -317,7 +331,7 @@ parse_raw(const char *name, size_t init_table_size)
 static int
 parse_dir(char *argv[], size_t init_table_size)
 {
-	struct hpack_table		*hpack = NULL;
+	struct hpack_table		*hpack = NULL, *hpack2 = NULL;
 	struct hpack_headerblock	*test = NULL;
 	FTS				*fts;
 	FTSENT				*ftsp = NULL;
@@ -329,7 +343,7 @@ parse_dir(char *argv[], size_t init_table_size)
 	size_t				 i = 0, j, k;
 	ssize_t				 ok = 0;
 	const char			*errstr = NULL;
-	size_t				 table_size, file_table_size;
+	size_t				 table_size, file_table_size, len;
 
 	if ((fts = fts_open(argv, FTS_COMFOLLOW|FTS_NOCHDIR,
 	    NULL)) == NULL) {
@@ -453,6 +467,11 @@ parse_dir(char *argv[], size_t init_table_size)
 					errstr = "failed to get HPACK table";
 					goto done;
 				}
+				if ((hpack2 =
+				    hpack_table_new(file_table_size)) == NULL) {
+					errstr = "failed to get HPACK table";
+					goto done;
+				}
 			}
 
 			if (parse_hex(wire, test, hpack) == -1) {
@@ -465,6 +484,17 @@ parse_dir(char *argv[], size_t init_table_size)
 				goto done;
 			}
 
+			/* Test encoding by re-encoding of the header */
+			free(wire);
+			if ((wire = hpack_encode(test, &len, hpack2)) == NULL) {
+				errstr = "re-encoding failed";
+				goto done;
+			}
+			if (parse_data(wire, len, test, hpack2) == -1) {
+				errstr = "re-decoding failed";
+				goto done;
+			}
+
 			ok++;
 			hpack_headerblock_free(test);
 			test = NULL;
@@ -474,7 +504,8 @@ parse_dir(char *argv[], size_t init_table_size)
 
 		i = 0;
 		hpack_table_free(hpack);
-		hpack = NULL;
+		hpack_table_free(hpack2);
+		hpack = hpack2 = NULL;
 		json_free(json);
 		json = NULL;
 		free(str);
@@ -496,6 +527,7 @@ parse_dir(char *argv[], size_t init_table_size)
 		log(1, "FAILED: %s\n", errstr);
 	free(wire);
 	hpack_table_free(hpack);
+	hpack_table_free(hpack2);
 	hpack_headerblock_free(test);
 	json_free(json);
 	free(str);

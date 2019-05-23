@@ -554,9 +554,9 @@ encode_huffman(const char *name)
 			ret = 0;
 		goto done;
 	}
-	if ((enc = huffman_encode(buf, len, &enclen)) == NULL)
+	if ((enc = hpack_huffman_encode(buf, len, &enclen)) == NULL)
 		goto done;
-	if ((dec = huffman_decode(enc, enclen, &declen)) == NULL)
+	if ((dec = hpack_huffman_decode(enc, enclen, &declen)) == NULL)
 		goto done;
 	if (memcmp(dec, buf, len) != 0)
 		goto done;
@@ -592,9 +592,9 @@ decode_huffman(const char *name)
 			ret = 0;
 		goto done;
 	}
-	if ((dec = huffman_decode(buf, len, &declen)) == NULL)
+	if ((dec = hpack_huffman_decode(buf, len, &declen)) == NULL)
 		goto done;
-	if ((enc = huffman_encode(dec, declen, &enclen)) == NULL)
+	if ((enc = hpack_huffman_encode(dec, declen, &enclen)) == NULL)
 		goto done;
 	if (memcmp(enc, buf, len) != 0)
 		goto done;

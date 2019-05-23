@@ -50,10 +50,10 @@ static int	 hpack_encode_int(struct hbuf *, long, unsigned char,
 		    unsigned char);
 static int	 hpack_encode_str(struct hbuf *, char *);
 
-static int	 huffman_init(void);
-static struct huffman_node *
-		 huffman_new(void);
-static void	 huffman_free(struct huffman_node *);
+static int	 hpack_huffman_init(void);
+static struct hpack_huffman_node *
+		 hpack_huffman_new(void);
+static void	 hpack_huffman_free(struct hpack_huffman_node *);
 
 static struct hbuf *
 		 hbuf_new(unsigned char *, size_t);
@@ -73,7 +73,7 @@ int
 hpack_init(void)
 {
 	/* Initialize the huffman tree */
-	if (huffman_init() == -1)
+	if (hpack_huffman_init() == -1)
 		return (-1);
 
 	return (0);
@@ -477,7 +477,7 @@ hpack_decode_str(struct hbuf *buf, unsigned char prefix)
 		return (NULL);
 	if ((c & HPACK_M_LITERAL) == HPACK_F_LITERAL_HUFFMAN) {
 		DPRINTF("%s: decoding huffman code (size %ld)", __func__, i);
-		if ((str = huffman_decode_str(ptr, (size_t)i)) == NULL)
+		if ((str = hpack_huffman_decode_str(ptr, (size_t)i)) == NULL)
 			return (NULL);
 	} else {
 		if ((str = calloc(1, (size_t)i + 1)) == NULL)
@@ -766,7 +766,7 @@ hpack_encode_str(struct hbuf *buf, char *str)
 	 * to do this...
 	 */
 	slen = strlen(str);
-	if ((data = huffman_encode(str, slen, &len)) == NULL)
+	if ((data = hpack_huffman_encode(str, slen, &len)) == NULL)
 		goto done;
 	if (len > 0 && len < slen) {
 		DPRINTF("%s: encoded huffman code (size %ld, from %ld)",
@@ -791,14 +791,14 @@ hpack_encode_str(struct hbuf *buf, char *str)
 }
 
 static int
-huffman_init(void)
+hpack_huffman_init(void)
 {
-	struct hpack_huffman	*hph;
-	struct huffman_node	*root, *cur, *node;
-	unsigned int		 i, j;
+	struct hpack_huffman		*hph;
+	struct hpack_huffman_node	*root, *cur, *node;
+	unsigned int			 i, j;
 
 	/* Create new Huffman tree */
-	if ((root = huffman_new()) == NULL)
+	if ((root = hpack_huffman_new()) == NULL)
 		return (-1);
 
 	for (i = 0; i < HPACK_HUFFMAN_SIZE; i++) {
@@ -809,14 +809,16 @@ huffman_init(void)
 		for (j = hph->hph_length; j > 0; j--) {
 			if ((hph->hph_code >> (j - 1)) & 1) {
 				if (cur->hpn_one == NULL) {
-					if ((node = huffman_new()) == NULL)
+					if ((node =
+					    hpack_huffman_new()) == NULL)
 						goto fail;
 					cur->hpn_one = node;
 				}
 				cur = cur->hpn_one;
 			} else {
 				if (cur->hpn_zero == NULL) {
-					if ((node = huffman_new()) == NULL)
+					if ((node =
+					    hpack_huffman_new()) == NULL)
 						goto fail;
 					cur->hpn_zero = node;
 				}
@@ -831,17 +833,17 @@ huffman_init(void)
 	hpack_global.hpack_huffman = root;
 	return (0);
  fail:
-	huffman_free(root);
+	hpack_huffman_free(root);
 	hpack_global.hpack_huffman = NULL;
 	return (-1);
 }
 
 unsigned char *
-huffman_decode(unsigned char *buf, size_t len, size_t *decoded_len)
+hpack_huffman_decode(unsigned char *buf, size_t len, size_t *decoded_len)
 {
-	struct huffman_node	*node, *root;
-	unsigned int		 i, j, code;
-	struct hbuf		*hbuf = NULL;
+	struct hpack_huffman_node	*node, *root;
+	unsigned int			 i, j, code;
+	struct hbuf			*hbuf = NULL;
 
 	if ((root = node = hpack_global.hpack_huffman) == NULL)
 		errx(1, "hpack not initialized");
@@ -880,13 +882,13 @@ huffman_decode(unsigned char *buf, size_t len, size_t *decoded_len)
 }
 
 char *
-huffman_decode_str(unsigned char *buf, size_t len)
+hpack_huffman_decode_str(unsigned char *buf, size_t len)
 {
 	unsigned char	*data;
 	char		*str;
 	size_t		 data_len;
 
-	if ((data = huffman_decode(buf, len, &data_len)) == NULL)
+	if ((data = hpack_huffman_decode(buf, len, &data_len)) == NULL)
 		return (NULL);
 
 	/* Allocate with an extra NUL character */
@@ -905,7 +907,7 @@ huffman_decode_str(unsigned char *buf, size_t len)
 }
 
 unsigned char *
-huffman_encode(unsigned char *data, size_t len, size_t *encoded_len)
+hpack_huffman_encode(unsigned char *data, size_t len, size_t *encoded_len)
 {
 	struct hbuf		*hbuf;
 	struct hpack_huffman	*hph;
@@ -963,10 +965,10 @@ huffman_encode(unsigned char *data, size_t len, size_t *encoded_len)
 	return (NULL);
 }
 
-static struct huffman_node *
-huffman_new(void)
+static struct hpack_huffman_node *
+hpack_huffman_new(void)
 {
-	struct huffman_node	*node;
+	struct hpack_huffman_node	*node;
 
 	if ((node = calloc(1, sizeof(*node))) == NULL)
 		return (NULL);
@@ -976,12 +978,12 @@ huffman_new(void)
 }
 
 static void
-huffman_free(struct huffman_node *root)
+hpack_huffman_free(struct hpack_huffman_node *root)
 {
 	if (root == NULL)
 		return;
-	huffman_free(root->hpn_zero);
-	huffman_free(root->hpn_one);
+	hpack_huffman_free(root->hpn_zero);
+	hpack_huffman_free(root->hpn_one);
 	free(root);
 }
 
@@ -993,7 +995,7 @@ hbuf_new(unsigned char *data, size_t len)
 
 	if ((buf = calloc(1, sizeof(*buf))) == NULL)
 		return (NULL);
-	size = MAX(HUFFMAN_BUFSZ, len);
+	size = MAX(HPACK_HUFFMAN_BUFSZ, len);
 	if ((buf->data = calloc(1, size)) == NULL) {
 		free(buf);
 		return (NULL);

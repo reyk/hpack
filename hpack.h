@@ -61,10 +61,10 @@ struct hpack_headerblock
 void	 hpack_headerblock_free(struct hpack_headerblock *);
 
 unsigned char
-	*huffman_decode(unsigned char *, size_t, size_t *);
-char	*huffman_decode_str(unsigned char *, size_t);
+	*hpack_huffman_decode(unsigned char *, size_t, size_t *);
+char	*hpack_huffman_decode_str(unsigned char *, size_t);
 unsigned char
-	*huffman_encode(unsigned char *, size_t, size_t *);
+	*hpack_huffman_encode(unsigned char *, size_t, size_t *);
 
 #ifdef HPACK_INTERNAL
 
@@ -77,17 +77,17 @@ unsigned char
 /* from sys/param.h */
 #define MAX(a,b)		(((a)>(b))?(a):(b))
 
-#define HUFFMAN_BUFSZ		256
+#define HPACK_HUFFMAN_BUFSZ	256
 #define HPACK_MAX_TABLE_SIZE	4096
 
-struct huffman_node {
-	struct huffman_node	*hpn_zero;
-	struct huffman_node	*hpn_one;
-	int			 hpn_sym;
+struct hpack_huffman_node {
+	struct hpack_huffman_node	*hpn_zero;
+	struct hpack_huffman_node	*hpn_one;
+	int				 hpn_sym;
 };
 
 struct hpack {
-	struct huffman_node	*hpack_huffman;
+	struct hpack_huffman_node	*hpack_huffman;
 };
 
 struct hpack_table {

@@ -65,6 +65,7 @@ SUCCESS: regress/hpack-test-samples/hex/go-hpack_16.hpacktest: 10 tests
 SUCCESS: regress/hpack-test-samples/hex/go-hpack_18.hpacktest: 10 tests
 SUCCESS: regress/hpack-test-samples/hex/go-hpack_19.hpacktest: 10 tests
 SUCCESS: regress/hpack-test-samples/headers/headers_00.txt: 1 tests
+SUCCESS: regress/hpack-test-samples/headers/headers_01.txt: 1 tests
 SUCCESS: regress/hpack-test-case/go-hpack/story_00.json: 3 tests
 SUCCESS: regress/hpack-test-case/go-hpack/story_01.json: 2 tests
 SUCCESS: regress/hpack-test-case/go-hpack/story_02.json: 10 tests

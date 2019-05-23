@@ -29,10 +29,11 @@
 #include "hpack.h"
 
 static const struct hpack_index *
-		 hpack_table_getbyid(long, struct hpack_table *);
+		 hpack_table_getbyid(long, struct hpack_index *,
+		    struct hpack_table *);
 static const struct hpack_index *
 		 hpack_table_getbyheader(struct hpack_header *,
-		    struct hpack_table *);
+		    struct hpack_index *, struct hpack_table *);
 static int	 hpack_table_add(struct hpack_header *,
 		    struct hpack_table *);
 static int	 hpack_table_evict(long, long, struct hpack_table *);
@@ -163,9 +164,9 @@ hpack_table_free(struct hpack_table *hpack)
 }
 
 static const struct hpack_index *
-hpack_table_getbyid(long index, struct hpack_table *hpack)
+hpack_table_getbyid(long index, struct hpack_index *idbuf,
+    struct hpack_table *hpack)
 {
-	static struct hpack_index	 idbuf;
 	struct hpack_index		*id = NULL;
 	struct hpack_header		*hdr;
 	long				 dynidx = HPACK_STATIC_SIZE;
@@ -185,10 +186,10 @@ hpack_table_getbyid(long index, struct hpack_table *hpack)
 		    hpack_headerblock, hdr_entry) {
 			dynidx++;
 			if (dynidx == index) {
-				idbuf.hpi_id = index;
-				idbuf.hpi_name = hdr->hdr_name;
-				idbuf.hpi_value = hdr->hdr_value;
-				id = &idbuf;
+				idbuf->hpi_id = index;
+				idbuf->hpi_name = hdr->hdr_name;
+				idbuf->hpi_value = hdr->hdr_value;
+				id = idbuf;
 				break;
 			}
 		}
@@ -198,9 +199,9 @@ hpack_table_getbyid(long index, struct hpack_table *hpack)
 }
 
 static const struct hpack_index *
-hpack_table_getbyheader(struct hpack_header *key, struct hpack_table *hpack)
+hpack_table_getbyheader(struct hpack_header *key, struct hpack_index *idbuf,
+    struct hpack_table *hpack)
 {
-	static struct hpack_index	 idbuf;
 	struct hpack_index		*id = NULL, *firstid = NULL;
 	struct hpack_header		*hdr;
 	size_t				 i, dynidx = HPACK_STATIC_SIZE;
@@ -219,14 +220,13 @@ hpack_table_getbyheader(struct hpack_header *key, struct hpack_table *hpack)
 		if (strcasecmp(id->hpi_name, key->hdr_name) != 0)
 			continue;
 		if (firstid == NULL) {
-			memcpy(&idbuf, id, sizeof(*id));
-			idbuf.hpi_value = NULL;
-			firstid = &idbuf;
+			memcpy(idbuf, id, sizeof(*id));
+			idbuf->hpi_value = NULL;
+			firstid = idbuf;
 		}
 		if ((id->hpi_value != NULL && key->hdr_value != NULL) &&
-		    strcasecmp(id->hpi_value, key->hdr_value) == 0) {
+		    strcasecmp(id->hpi_value, key->hdr_value) == 0)
 			return (id);
-		}
 	}
 
 	/* Dynamic table */
@@ -236,17 +236,17 @@ hpack_table_getbyheader(struct hpack_header *key, struct hpack_table *hpack)
 		if (strcasecmp(hdr->hdr_name, key->hdr_name) != 0)
 			continue;
 		if (firstid == NULL) {
-			idbuf.hpi_id = dynidx;
-			idbuf.hpi_name = hdr->hdr_name;
-			idbuf.hpi_value = NULL;
-			firstid = &idbuf;
+			idbuf->hpi_id = dynidx;
+			idbuf->hpi_name = hdr->hdr_name;
+			idbuf->hpi_value = NULL;
+			firstid = idbuf;
 		}
 		if ((hdr->hdr_value != NULL && key->hdr_value != NULL) &&
 		    strcasecmp(hdr->hdr_value, key->hdr_value) == 0) {
-			idbuf.hpi_id = dynidx;
-			idbuf.hpi_name = hdr->hdr_name;
-			idbuf.hpi_value = hdr->hdr_value;
-			id = &idbuf;
+			idbuf->hpi_id = dynidx;
+			idbuf->hpi_name = hdr->hdr_name;
+			idbuf->hpi_value = hdr->hdr_value;
+			id = idbuf;
 			return (id);
 		}
 	}
@@ -417,6 +417,7 @@ static long
 hpack_decode_index(struct hbuf *buf, unsigned char prefix,
     const struct hpack_index **idptr, struct hpack_table *hpack)
 {
+	struct hpack_index		 idbuf;
 	struct hpack_header		*hdr = hpack->htb_next;
 	const struct hpack_index	*id;
 	long				 i;
@@ -431,7 +432,7 @@ hpack_decode_index(struct hbuf *buf, unsigned char prefix,
 
 	if (i == 0)
 		return (0);
-	if ((id = hpack_table_getbyid(i, hpack)) == NULL) {
+	if ((id = hpack_table_getbyid(i, &idbuf, hpack)) == NULL) {
 		DPRINTF("index not found: %ld\n", i);
 		return (-1);
 	}
@@ -632,6 +633,7 @@ hpack_encode(struct hpack_headerblock *hdrs, size_t *encoded_len,
     struct hpack_table *hpack)
 {
 	const struct hpack_index	*id;
+	struct hpack_index		 idbuf;
 	struct hpack_table		*ctx = NULL;
 	struct hpack_header		*hdr;
 	struct hbuf			*hbuf = NULL;
@@ -664,7 +666,7 @@ hpack_encode(struct hpack_headerblock *hdrs, size_t *encoded_len,
 			break;
 		}
 
-		id = hpack_table_getbyheader(hdr, hpack);
+		id = hpack_table_getbyheader(hdr, &idbuf, hpack);
 
 		/* 6.1 Indexed Header Field Representation */
 		if (id != NULL && id->hpi_value != NULL) {

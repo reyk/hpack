@@ -452,7 +452,7 @@ parse_dir(char *argv[], size_t init_table_size)
 					}
 					if (hpack_header_add(test,
 					    hdr->d.obj[k].lhs->d.str,
-					    hdr->d.obj[k].rhs->d.str) == NULL) {
+					    hdr->d.obj[k].rhs->d.str, 0) == NULL) {
 						errstr = "failed to add header";
 						goto done;
 					}

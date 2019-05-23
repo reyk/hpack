@@ -86,8 +86,8 @@ hpack_header_new(void)
 }
 
 struct hpack_header *
-hpack_header_add(struct hpack_headerblock *hdrs,
-    const char *name, const char *value)
+hpack_header_add(struct hpack_headerblock *hdrs, const char *name,
+    const char *value, enum hpack_header_index index)
 {
 	struct hpack_header	*hdr;
 
@@ -95,6 +95,7 @@ hpack_header_add(struct hpack_headerblock *hdrs,
 		return (NULL);
 	hdr->hdr_name = strdup(name);
 	hdr->hdr_value = strdup(value);
+	hdr->hdr_index = index;
 	if (hdr->hdr_name == NULL || hdr->hdr_value == NULL) {
 		hpack_header_free(hdr);
 		return (NULL);
@@ -257,8 +258,7 @@ hpack_table_getbyheader(struct hpack_header *key, struct hpack_index *idbuf,
 static int
 hpack_table_add(struct hpack_header *hdr, struct hpack_table *hpack)
 {
-	struct hpack_header	*newhdr;
-	long			 newsize;
+	long		 newsize;
 
 	if (hdr->hdr_index != HPACK_INDEX)
 		return (0);
@@ -281,10 +281,9 @@ hpack_table_add(struct hpack_header *hdr, struct hpack_table *hpack)
 		hpack_table_evict(hpack->htb_table_size,
 		    newsize, hpack);
 
-	if ((newhdr = hpack_header_add(hpack->htb_dynamic,
-	    hdr->hdr_name, hdr->hdr_value)) == NULL)
+	if (hpack_header_add(hpack->htb_dynamic,
+	    hdr->hdr_name, hdr->hdr_value, hdr->hdr_index) == NULL)
 		return (-1);
-	newhdr->hdr_index = hdr->hdr_index;
 	hpack->htb_dynamic_entries++;
 	hpack->htb_dynamic_size += newsize;
 
@@ -335,7 +334,7 @@ hpack_table_size(struct hpack_table *hpack)
 }
 
 struct hpack_headerblock *
-hpack_decode(unsigned char *buf, size_t len, struct hpack_table *hpack)
+hpack_decode(unsigned char *data, size_t len, struct hpack_table *hpack)
 {
 	struct hpack_headerblock	*hdrs = NULL;
 	struct hbuf			*hbuf = NULL;
@@ -353,7 +352,7 @@ hpack_decode(unsigned char *buf, size_t len, struct hpack_table *hpack)
 	hpack->htb_headers = hdrs;
 	hpack->htb_next = NULL;
 
-	if ((hbuf = hbuf_new(buf, len)) == NULL)
+	if ((hbuf = hbuf_new(data, len)) == NULL)
 		goto fail;
 
 	do {

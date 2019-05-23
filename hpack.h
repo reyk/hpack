@@ -54,7 +54,7 @@ struct hpack_header
 	*hpack_header_new(void);
 struct hpack_header
 	*hpack_header_add(struct hpack_headerblock *,
-	    const char *key, const char *value);
+	    const char *, const char *, enum hpack_header_index);
 void	 hpack_header_free(struct hpack_header *);
 struct hpack_headerblock
 	*hpack_headerblock_new(void);

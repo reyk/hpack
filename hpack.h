@@ -25,15 +25,15 @@ struct hpack_table;
 
 enum hpack_header_index {
 	HPACK_NO_INDEX = 0,
-	HPACK_INDEX,
 	HPACK_NEVER_INDEX,
+	HPACK_INDEX,
 };
 
 struct hpack_header {
-	char			*hdr_name;
-	char			*hdr_value;
-	enum hpack_header_index	 hdr_index;
-	TAILQ_ENTRY(hpack_header) hdr_entry;
+	char				*hdr_name;
+	char				*hdr_value;
+	enum hpack_header_index		 hdr_index;
+	TAILQ_ENTRY(hpack_header)	 hdr_entry;
 };
 TAILQ_HEAD(hpack_headerblock, hpack_header);
 

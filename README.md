@@ -1,6 +1,8 @@
 hpack
 =====
 
+The [hpack(3)](hpack.md) header compression API for HTTP/2, written in C.
+
 1. Why another HPACK implementation?
 
    I either didn't like the license or the style of the existing C code.

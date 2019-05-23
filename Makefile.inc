@@ -1,5 +1,4 @@
 SRCS+=	hpack.c
-NOMAN=	yes
 
 CFLAGS+= -Wall -I. -I${.CURDIR}/..
 CFLAGS+= -Wstrict-prototypes -Wmissing-prototypes

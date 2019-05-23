@@ -15,7 +15,7 @@ HPACK(3) - Library Functions Manual
 **hpack\_headerblock\_free**,
 **hpack\_huffman\_decode**,
 **hpack\_huffman\_decode\_str**,
-**hpack\_huffman\_encode**, - HPACK header compression for HTTP/2.
+**hpack\_huffman\_encode** - HPACK header compression for HTTP/2
 
 # SYNOPSIS
 

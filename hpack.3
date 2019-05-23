@@ -31,8 +31,8 @@
 .Nm hpack_headerblock_free ,
 .Nm hpack_huffman_decode ,
 .Nm hpack_huffman_decode_str ,
-.Nm hpack_huffman_encode ,
-.Nd HPACK header compression for HTTP/2.
+.Nm hpack_huffman_encode
+.Nd HPACK header compression for HTTP/2
 .Sh SYNOPSIS
 .In sys/queue.h
 .In hpack.h
@@ -98,7 +98,6 @@ to add the header to the index of the dynamic HPACK table,
 to exclude the header from the index,
 or to exclude the header from the index and to mark it as sensitive to
 never include it in the index.
-.Pp
 .Sh RETURN VALUES
 .Fn hpack_init
 returns 0 on success or -1 on error.

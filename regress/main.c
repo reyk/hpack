@@ -37,6 +37,7 @@ static int	 encode_huffman(const char *);
 static int	 decode_huffman(const char *);
 
 int	 verbose;
+int	 encode;
 
 static void
 log(int level, const char *fmt, ...)
@@ -266,6 +267,8 @@ parse_input(const char *name, size_t init_table_size)
 	char			 buf[BUFSIZ];
 	ssize_t			 ok = 0, ret = -1;
 
+	if (encode)
+		return (-1);
 	if (strcmp("-", name) == 0)
 		fp = stdin;
 	else if ((fp = fopen(name, "r")) == NULL)
@@ -295,7 +298,7 @@ parse_input(const char *name, size_t init_table_size)
 static int
 parse_raw(const char *name, size_t init_table_size)
 {
-	char				 buf[65535];
+	char				 buf[65535], *ptr = NULL, *k, *v;
 	struct hpack_table		*hpack = NULL;
 	struct hpack_headerblock	*hdrs = NULL;
 	FILE				*fp;
@@ -308,18 +311,49 @@ parse_raw(const char *name, size_t init_table_size)
 		goto done;
 	if ((hpack = hpack_table_new(init_table_size)) == NULL)
 		goto done;
-	if ((len = fread(buf, 1, sizeof(buf), fp)) < 1) {
-		if (feof(fp))
-			ret = 0;
-		goto done;
+	if (encode) {
+		if ((hdrs = hpack_headerblock_new()) == NULL)
+			goto done;
+		while (fgets(buf, sizeof(buf), fp) != NULL) {
+			buf[strcspn(buf, "\r\n")] = '\0';
+			k = buf;
+			if ((v = strchr(k + 1, ':')) != NULL) {
+				*v++ = '\0';
+				v += strspn(v, " \t");
+			} else if (isupper(buf[0])) {
+				/* cheap way to test for the method */
+				buf[strcspn(buf, " \t")] = '\0';
+				k = ":method";
+				v = buf;
+			} else
+				v = "";
+			log(2, "adding header '%s: %s'\n", k, v);
+			if (hpack_header_add(hdrs,
+			    k, v, HPACK_INDEX) == NULL)
+				goto done;
+		}
+		if ((ptr = hpack_encode(hdrs, &len, hpack)) == NULL) {
+			log(1, "raw HPACK decoding failed\n");
+			goto done;
+		}
+	} else {
+		if ((len = fread(buf, 1, sizeof(buf), fp)) < 1) {
+			if (feof(fp))
+				ret = 0;
+			goto done;
+		}
+		ptr = buf;
 	}
-	if ((hdrs = hpack_decode(buf, len, hpack)) == NULL) {
+
+	if ((hdrs = hpack_decode(ptr, len, hpack)) == NULL) {
 		log(1, "raw HPACK decoding failed\n");
 		goto done;
 	}
 
 	ret = 0;
  done:
+	if (ptr != buf)
+		free(ptr);
 	if (fp != NULL && fp != stdin)
 		fclose(fp);
 	hpack_headerblock_free(hdrs);
@@ -345,6 +379,8 @@ parse_dir(char *argv[], size_t init_table_size)
 	const char			*errstr = NULL;
 	size_t				 table_size, file_table_size, len;
 
+	if (encode)
+		return (-1);
 	if ((fts = fts_open(argv, FTS_COMFOLLOW|FTS_NOCHDIR,
 	    NULL)) == NULL) {
 		errstr = "failed to open directory";
@@ -617,7 +653,7 @@ usage(void)
 {
 	extern char	*__progname;
 
-	fprintf(stderr, "usage: %s [-d|e file] [-h hex] [-i input-file]"
+	fprintf(stderr, "usage: %s [-d|e file] [-h hex] [-p input-file]"
 	    " [-r raw-file] [-x hex] [dir ...]\n", __progname);
 	exit(1);
 }
@@ -632,10 +668,13 @@ main(int argc, char *argv[])
 	if (hpack_init() == -1)
 		return (1);
 
-	while ((ch = getopt(argc, argv, "d:e:h:i:r:v")) != -1) {
+	while ((ch = getopt(argc, argv, "d:Ee:h:i:r:v")) != -1) {
 		switch (ch) {
 		case 'd':
 			huffdec = optarg;
+			break;
+		case 'E':
+			encode = 1;
 			break;
 		case 'e':
 			huffenc = optarg;

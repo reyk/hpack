@@ -6,7 +6,7 @@ The [hpack(3)](hpack.md) header compression API for HTTP/2, written in C.
 1. Why another HPACK implementation?
 
    I either didn't like the license or the style of the existing C code.
-   And I wanted to have a small HPACK implementation that fits into a
+   And I wanted to have a small [HPACK][4] implementation that fits into a
    single `.c` and `.h` file.  As a design decision, I decided to be
    extra careful with input and output buffers: avoiding to use
    dangerous pointer arithmetics, using allocated (heap) data instead
@@ -454,3 +454,4 @@ SUCCESS: regress/hpack-test-case/python-hpack/story_31.json: 117 tests
 [1]: https://bsd.plumbing/
 [2]: https://www.openbsd.org/
 [3]: http://lcamtuf.coredump.cx/afl/
+[4]: https://tools.ietf.org/html/rfc7541

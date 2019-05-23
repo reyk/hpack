@@ -126,6 +126,14 @@ on error or an out-of-memory condition.
 queue(3),
 relayd(8)
 
+# STANDARDS
+
+R. Peon,
+H. Ruellan,
+*HPACK: Header Compression for HTTP/2*,
+RFC 7541,
+May 2015.
+
 # HISTORY
 
 The

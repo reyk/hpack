@@ -7,7 +7,7 @@ The [hpack(3)](hpack.md) header compression API for HTTP/2, written in C.
 
    I either didn't like the license or the style of the existing C code.
    And I wanted to have a small [HPACK][4] implementation that fits into a
-   single `.c` and `.h` file.  As a design decision, I decided to be
+   single `.c` and `.h` file.  As a design goal, I decided to be
    extra careful with input and output buffers: avoiding to use
    dangerous pointer arithmetics, using allocated (heap) data instead
    of stack buffers, depending on extra features of OpenBSD's "otto" malloc(3).
